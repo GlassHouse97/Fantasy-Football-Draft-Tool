@@ -1,0 +1,5 @@
+player_id,display_name,position,projected_points,is_synthetic
+DEMO_QB_01,Demo Quarterback 1,QB,330,true
+DEMO_RB_01,Demo Running Back 1,RB,260,true
+DEMO_WR_01,Demo Wide Receiver 1,WR,250,true
+DEMO_TE_01,Demo Tight End 1,TE,200,true

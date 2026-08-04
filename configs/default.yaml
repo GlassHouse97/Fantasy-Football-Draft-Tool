@@ -1,0 +1,17 @@
+project:
+  name: Fantasy Football Draft AI
+  prediction_season: 2026
+  random_seed: 42
+paths:
+  data_dir: data
+  raw_dir: data/raw
+  processed_dir: data/processed
+  warehouse: data/warehouse/fantasy_football.duckdb
+  manifests: data/raw/manifests
+network:
+  timeout_seconds: 30
+  user_agent: FantasyFootballDraftAI/0.1 (+https://github.com/GlassHouse97/Fantasy-Football-Draft-Tool)
+training:
+  start_season: 2015
+  end_season: 2025
+  include_synthetic: false

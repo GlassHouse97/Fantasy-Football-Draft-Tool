@@ -1,0 +1,27 @@
+---
+title: "Scoring Format Comparison"
+format: html
+execute:
+  freeze: auto
+---
+
+```{r}
+# Optional companion analysis. It deliberately does not duplicate production logic.
+library(dplyr)
+library(ggplot2)
+
+example <- tibble::tribble(
+  ~format, ~reception_value, ~receptions, ~receiving_yards, ~receiving_tds,
+  "Standard", 0.0, 7, 100, 1,
+  "Half PPR", 0.5, 7, 100, 1,
+  "PPR", 1.0, 7, 100, 1
+) |>
+  mutate(points = receptions * reception_value + receiving_yards / 10 + receiving_tds * 6)
+
+ggplot(example, aes(format, points, fill = format)) +
+  geom_col(show.legend = FALSE) +
+  labs(title = "One football stat line, three scoring outcomes", x = NULL, y = "Fantasy points") +
+  theme_minimal()
+```
+
+This document is optional and was not executed during Phase 0 because R and Quarto were not installed. Python remains the canonical implementation.

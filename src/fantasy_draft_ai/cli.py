@@ -1,0 +1,163 @@
+"""Command-line entry point for repeatable local workflows."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import typer
+import yaml
+
+from fantasy_draft_ai.config import load_config
+from fantasy_draft_ai.data.audit import audit_project_data
+from fantasy_draft_ai.data.sources.espn import import_espn_adp
+from fantasy_draft_ai.data.sources.ffc_adp import snapshot_ffc_adp
+from fantasy_draft_ai.data.sources.nflverse import download_nflverse
+from fantasy_draft_ai.data.warehouse import Warehouse
+from fantasy_draft_ai.logging import configure_logging
+from fantasy_draft_ai.rules.models import LeagueRules
+from fantasy_draft_ai.scoring.engine import PlayerStatLine, score_player
+from fantasy_draft_ai.services.status import project_status
+
+app = typer.Typer(no_args_is_help=True, help="Local fantasy football modeling and draft tools.")
+data_app = typer.Typer(no_args_is_help=True, help="Acquire, import, and audit data.")
+rules_app = typer.Typer(no_args_is_help=True, help="Inspect normalized league rules.")
+app.add_typer(data_app, name="data")
+app.add_typer(rules_app, name="rules")
+
+
+def _load_rules(path: Path) -> LeagueRules:
+    with path.open(encoding="utf-8") as handle:
+        payload = yaml.safe_load(handle)
+    return LeagueRules.model_validate(payload)
+
+
+@app.callback()
+def main() -> None:
+    """Configure shared logging before executing a subcommand."""
+
+    configure_logging()
+
+
+@app.command("status")
+def status_command() -> None:
+    """Show what is actually available without fabricating model status."""
+
+    config = load_config()
+    for item in project_status(config):
+        marker = "[available]" if item.available else "[pending]"
+        typer.echo(f"{marker} {item.name}: {item.status}")
+
+
+@data_app.command("init-warehouse")
+def init_warehouse() -> None:
+    """Create canonical DuckDB tables idempotently."""
+
+    config = load_config()
+    path = config.resolve(config.paths.warehouse)
+    Warehouse(path).initialize()
+    typer.echo(f"Initialized warehouse: {path}")
+
+
+@data_app.command("download-nflverse")
+def download_nflverse_command(
+    start_season: int = typer.Option(..., min=1999),
+    end_season: int = typer.Option(..., min=1999),
+    offline: bool = typer.Option(False, help="Reuse matching local captures only."),
+) -> None:
+    """Archive nflverse player identities and weekly stats."""
+
+    result = download_nflverse(
+        load_config(), start_season=start_season, end_season=end_season, offline=offline
+    )
+    typer.echo(f"Players: {result.player_path}")
+    typer.echo(f"Weekly stats: {result.stats_path}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"Offline reuse: {result.reused_offline}")
+
+
+@data_app.command("snapshot-ffc-adp")
+def snapshot_ffc_adp_command(
+    season: int = typer.Option(..., min=2007),
+    scoring_format: str = typer.Option("ppr", "--format"),
+    teams: int = typer.Option(12, min=4, max=32),
+    position: str | None = typer.Option(None),
+    offline: bool = typer.Option(False, help="Reuse a matching local snapshot only."),
+) -> None:
+    """Archive one documented FFC ADP response without overwriting history."""
+
+    result = snapshot_ffc_adp(
+        load_config(),
+        season=season,
+        scoring_format=scoring_format,
+        teams=teams,
+        position=position,
+        offline=offline,
+    )
+    typer.echo(f"Rows: {len(result.normalized)}")
+    typer.echo(f"Raw snapshot: {result.raw_path}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"Offline reuse: {result.reused_offline}")
+
+
+@data_app.command("import-espn-adp")
+def import_espn_adp_command(path: Path) -> None:
+    """Validate and archive a user-supplied ESPN ADP CSV."""
+
+    result = import_espn_adp(load_config(), path)
+    typer.echo(result.report.render())
+    if result.report.has_fatal_errors:
+        raise typer.Exit(code=2)
+    typer.echo(f"Raw snapshot: {result.raw_path}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+
+
+@data_app.command("audit")
+def audit_command() -> None:
+    """Verify raw hashes and report canonical table counts."""
+
+    result = audit_project_data(load_config())
+    typer.echo(f"Manifests: {result.manifest_count}")
+    typer.echo(f"Verified raw files: {result.verified_files}")
+    typer.echo("Canonical table rows:")
+    for table, count in result.table_counts.items():
+        typer.echo(f"  {table}: {count}")
+    for failure in result.failures:
+        typer.echo(f"FAIL: {failure}", err=True)
+    if not result.passed:
+        raise typer.Exit(code=2)
+
+
+@rules_app.command("fingerprint")
+def fingerprint_command(path: Path) -> None:
+    """Print canonical JSON and its deterministic ruleset SHA-256."""
+
+    rules = _load_rules(path)
+    typer.echo(json.dumps(json.loads(rules.canonical_json()), indent=2, sort_keys=True))
+    typer.echo(f"Fingerprint: {rules.fingerprint()}")
+
+
+@rules_app.command("score-example")
+def score_example_command(path: Path) -> None:
+    """Score a documented example stat line under a YAML ruleset."""
+
+    rules = _load_rules(path)
+    example = PlayerStatLine(position="WR", receiving_yards=100, receptions=7, receiving_tds=1)
+    typer.echo(f"Example WR points: {score_player(example, rules.scoring):.2f}")
+
+
+@app.command("app")
+def app_command() -> None:
+    """Start the local Streamlit application."""
+
+    config = load_config()
+    subprocess.run(
+        [sys.executable, "-m", "streamlit", "run", str(config.project_root / "app.py")],
+        check=True,
+    )
+
+
+if __name__ == "__main__":
+    app()
