@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import duckdb
+
 from fantasy_draft_ai.config import AppConfig
 
 
@@ -25,6 +27,22 @@ def project_status(config: AppConfig) -> list[StatusItem]:
     def latest_label(files: list[Path]) -> str:
         return files[-1].name if files else "not available"
 
+    identity_status = "not built; run fantasy-draft data review-identities"
+    identity_available = False
+    if warehouse.exists():
+        try:
+            with duckdb.connect(str(warehouse), read_only=True) as connection:
+                counts = connection.execute(
+                    "SELECT count(*) FILTER (WHERE status = 'pending' AND is_current), "
+                    "count(*) FILTER (WHERE status = 'resolved' AND is_current) "
+                    "FROM identity_review_queue"
+                ).fetchone()
+            if counts is not None:
+                identity_status = f"{int(counts[0])} pending; {int(counts[1])} resolved"
+                identity_available = True
+        except duckdb.CatalogException:
+            pass
+
     return [
         StatusItem(
             "Warehouse",
@@ -34,6 +52,7 @@ def project_status(config: AppConfig) -> list[StatusItem]:
         StatusItem("nflverse raw data", latest_label(nfl_files), bool(nfl_files)),
         StatusItem("FFC ADP snapshot", latest_label(ffc_files), bool(ffc_files)),
         StatusItem("ESPN ADP", latest_label(espn_files), bool(espn_files)),
+        StatusItem("Identity review queue", identity_status, identity_available),
         StatusItem("Scoring and rules engine", "available (configured logic)", True),
         StatusItem("Player projection model", "not trained", False),
         StatusItem("2026 projection board", "not built", False),

@@ -1,0 +1,1 @@
+review_id,source,source_player_id,source_display_name,source_position,source_nfl_team,candidate_player_id,candidate_display_name,candidate_position,candidate_nfl_team,reason,mapping_confidence,status,resolution,player_id,canonical_display_name,reviewed_at,reviewer,notes

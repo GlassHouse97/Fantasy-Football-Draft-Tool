@@ -22,3 +22,14 @@ def test_unresolved_name_only_identity_is_explicit() -> None:
         mapping_source="manual-upload-name-only",
     )
     assert identity.mapping_confidence == "unresolved"
+
+
+def test_reviewed_identity_confidence_is_explicit() -> None:
+    identity = PlayerIdentity(
+        player_id="internal-1",
+        display_name="Reviewed Player",
+        gsis_id="gsis-1",
+        mapping_confidence=MappingConfidence.REVIEWED,
+        mapping_source="manual:identity-review:dataset-1",
+    )
+    assert identity.mapping_confidence == "reviewed"
