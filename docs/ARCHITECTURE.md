@@ -38,6 +38,14 @@ documented source or manual upload
 
 The warehouse uses explicit canonical tables even before every importer exists. This prevents early source-specific column names from becoming the application contract.
 
+## nflverse warehouse loading
+
+An nflverse load always selects the player and weekly-stat files from one source manifest. It never combines independently selected "latest" files. Before normalization, both raw files must exist inside the project and match their recorded SHA-256 hashes.
+
+The player dimension uses GSIS IDs as internal IDs and never joins on display name. Weekly rows with no player ID are reported and excluded only when every mapped production field is zero; non-null IDs missing from the player capture and identifier-free rows with production are fatal. The loader stages both normalized tables, merges identity data without erasing later manual platform IDs or review metadata, key-upserts nflverse weekly rows, runs post-load invariants, and commits one DuckDB transaction. It never deletes keys absent from a capture because the current manifest does not prove that a file is a complete season replacement. Repeating the same manifest produces the same canonical rows and counts.
+
+The nflverse player capture is a current global identity snapshot, not a table limited to the requested stat seasons. Historical feature code must use weekly team context and explicit cutoffs rather than treating current identity attributes as historical facts.
+
 ## Interfaces chosen in Phase 0
 
 - Python 3.11 is the canonical runtime.

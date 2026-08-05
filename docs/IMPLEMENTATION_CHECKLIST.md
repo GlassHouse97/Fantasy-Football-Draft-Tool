@@ -14,6 +14,9 @@
 - [x] Create the DuckDB warehouse and canonical empty tables.
 - [x] Create required and optional manual import templates.
 - [x] Implement nflverse player and weekly-stat downloads with offline reuse.
+- [x] Normalize manifest-backed nflverse captures into canonical DuckDB tables.
+- [x] Verify raw hashes and load both tables transactionally and idempotently.
+- [x] Report excluded placeholder rows, unresolved IDs, duplicates, and identity conflicts.
 - [x] Implement timestamped FFC ADP snapshots and normalization.
 - [x] Implement validated manual ESPN ADP archiving.
 - [x] Add small labeled fixtures and deterministic tests.

@@ -50,12 +50,13 @@ Start small while verifying your environment:
 
 ```powershell
 fantasy-draft data download-nflverse --start-season 2025 --end-season 2025
+fantasy-draft data load-nflverse
 fantasy-draft data snapshot-ffc-adp --season 2026 --format ppr --teams 12
 fantasy-draft data import-espn-adp data\templates\espn_adp_snapshot_template.csv
 fantasy-draft data audit
 ```
 
-Network commands preserve timestamped raw files. Add `--offline` to reuse an existing matching download without making a request.
+Network commands preserve timestamped raw files. Add `--offline` to reuse an existing matching download without making a request. `load-nflverse` verifies one manifest-paired capture and its raw hashes, excludes only reported non-player placeholders, preserves curated identity mappings, and upserts nflverse weekly keys in one transaction. Unmentioned rows are never deleted by a potentially partial capture, and repeating the same manifest leaves canonical rows and counts unchanged.
 
 ## Learn the system
 
