@@ -64,6 +64,49 @@ CREATE TABLE IF NOT EXISTS player_week_stats (
     PRIMARY KEY (season, week, player_id, source)
 );
 
+CREATE TABLE IF NOT EXISTS player_source_mappings (
+    source VARCHAR NOT NULL,
+    source_player_id VARCHAR NOT NULL,
+    player_id VARCHAR NOT NULL,
+    mapping_confidence VARCHAR NOT NULL,
+    mapping_source VARCHAR NOT NULL,
+    review_id VARCHAR NOT NULL,
+    reviewed_at TIMESTAMPTZ NOT NULL,
+    reviewer VARCHAR NOT NULL,
+    notes VARCHAR,
+    source_dataset_id VARCHAR NOT NULL,
+    PRIMARY KEY (source, source_player_id)
+);
+
+CREATE TABLE IF NOT EXISTS identity_review_queue (
+    review_id VARCHAR PRIMARY KEY,
+    issue_type VARCHAR NOT NULL,
+    source VARCHAR NOT NULL,
+    source_player_id VARCHAR NOT NULL,
+    source_display_name VARCHAR NOT NULL,
+    source_position VARCHAR,
+    source_nfl_team VARCHAR,
+    candidate_player_id VARCHAR,
+    candidate_display_name VARCHAR,
+    candidate_position VARCHAR,
+    candidate_nfl_team VARCHAR,
+    reason VARCHAR NOT NULL,
+    mapping_confidence VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    evidence_json JSON NOT NULL,
+    evidence_dataset_id VARCHAR NOT NULL,
+    first_seen_at TIMESTAMPTZ NOT NULL,
+    last_seen_at TIMESTAMPTZ NOT NULL,
+    resolution VARCHAR,
+    resolved_player_id VARCHAR,
+    canonical_display_name_override VARCHAR,
+    resolution_note VARCHAR,
+    resolved_at TIMESTAMPTZ,
+    reviewer VARCHAR,
+    resolution_dataset_id VARCHAR,
+    is_current BOOLEAN NOT NULL DEFAULT TRUE
+);
+
 CREATE TABLE IF NOT EXISTS player_season_features (
     player_id VARCHAR NOT NULL,
     feature_season INTEGER NOT NULL,
@@ -192,6 +235,8 @@ class Warehouse:
         tables = [
             "players",
             "player_week_stats",
+            "player_source_mappings",
+            "identity_review_queue",
             "player_season_features",
             "adp_snapshots",
             "league_rules",
@@ -200,6 +245,7 @@ class Warehouse:
         ]
         if not self.path.exists():
             return {table: 0 for table in tables}
+        self.initialize()
         with self.connect(read_only=True) as connection:
             counts: dict[str, int] = {}
             for table in tables:

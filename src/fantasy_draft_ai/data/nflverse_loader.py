@@ -628,6 +628,7 @@ def _commit_load(
                 [],
             )
             connection.execute(PLAYER_MERGE_SQL)
+            connection.execute(APPLY_REVIEWED_NFLVERSE_IDENTITIES_SQL)
             connection.execute(WEEKLY_STATS_MERGE_SQL)
             loaded_stats = _scalar(
                 connection,
@@ -831,6 +832,31 @@ WHEN NOT MATCHED THEN INSERT (
     source.birth_date, source.age, source.experience, source.is_active,
     source.mapping_confidence, source.mapping_source
 )
+"""
+
+APPLY_REVIEWED_NFLVERSE_IDENTITIES_SQL = """
+UPDATE players AS player SET
+    display_name = coalesce(review.canonical_display_name_override, player.display_name),
+    mapping_confidence = 'reviewed',
+    mapping_source = 'manual:identity-review:' || review.resolution_dataset_id
+FROM (
+    SELECT * EXCLUDE (review_order)
+    FROM (
+        SELECT
+            queue.*,
+            row_number() OVER (
+                PARTITION BY queue.resolved_player_id
+                ORDER BY queue.resolved_at DESC, queue.review_id DESC
+            ) AS review_order
+        FROM identity_review_queue AS queue
+        WHERE queue.source = 'nflverse'
+          AND queue.status = 'resolved'
+          AND queue.resolved_player_id IS NOT NULL
+          AND queue.resolution_dataset_id IS NOT NULL
+    )
+    WHERE review_order = 1
+) AS review
+WHERE player.player_id = review.resolved_player_id
 """
 
 WEEKLY_STATS_MERGE_SQL = """

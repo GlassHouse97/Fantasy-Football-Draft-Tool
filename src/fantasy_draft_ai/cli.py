@@ -13,6 +13,10 @@ import yaml
 
 from fantasy_draft_ai.config import load_config
 from fantasy_draft_ai.data.audit import audit_project_data
+from fantasy_draft_ai.data.identity_review import (
+    apply_identity_overrides,
+    refresh_identity_review_queue,
+)
 from fantasy_draft_ai.data.nflverse_loader import load_nflverse_to_warehouse
 from fantasy_draft_ai.data.sources.espn import import_espn_adp
 from fantasy_draft_ai.data.sources.ffc_adp import snapshot_ffc_adp
@@ -95,6 +99,34 @@ def load_nflverse_command(
     result = load_nflverse_to_warehouse(load_config(), manifest_path=manifest)
     typer.echo(result.render())
     if not result.committed:
+        raise typer.Exit(code=2)
+
+
+@data_app.command("review-identities")
+def review_identities_command(
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            help="Review worksheet path. Defaults to data/processed/identity/.",
+        ),
+    ] = None,
+) -> None:
+    """Refresh cross-source identity evidence and export a review worksheet."""
+
+    result = refresh_identity_review_queue(load_config(), output_path=output)
+    typer.echo(result.render())
+    if not result.committed:
+        raise typer.Exit(code=2)
+
+
+@data_app.command("apply-identity-overrides")
+def apply_identity_overrides_command(path: Path) -> None:
+    """Validate, archive, and transactionally apply reviewed identity decisions."""
+
+    result = apply_identity_overrides(load_config(), path)
+    typer.echo(result.render())
+    if result.quality.has_fatal_errors:
         raise typer.Exit(code=2)
 
 

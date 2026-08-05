@@ -11,6 +11,8 @@ This first runnable foundation includes:
 - a DuckDB warehouse schema for the project’s canonical tables;
 - current `nflreadpy` and Fantasy Football Calculator adapters with offline reuse;
 - a validated manual ESPN ADP import path, without scraping or login automation;
+- an auditable player-identity review queue and durable source-ID mapping registry;
+- immutable, validated manual identity overrides that survive nflverse reloads;
 - deterministic league-rule normalization and fingerprints;
 - configurable fantasy scoring, explicit FLEX/SUPERFLEX eligibility, and two replacement-value definitions;
 - tests for data integrity, scoring, rules, and demand-sensitive replacement values.
@@ -53,10 +55,23 @@ fantasy-draft data download-nflverse --start-season 2025 --end-season 2025
 fantasy-draft data load-nflverse
 fantasy-draft data snapshot-ffc-adp --season 2026 --format ppr --teams 12
 fantasy-draft data import-espn-adp data\templates\espn_adp_snapshot_template.csv
+fantasy-draft data review-identities
 fantasy-draft data audit
 ```
 
 Network commands preserve timestamped raw files. Add `--offline` to reuse an existing matching download without making a request. `load-nflverse` verifies one manifest-paired capture and its raw hashes, excludes only reported non-player placeholders, preserves curated identity mappings, and upserts nflverse weekly keys in one transaction. Unmentioned rows are never deleted by a potentially partial capture, and repeating the same manifest leaves canonical rows and counts unchanged.
+
+`review-identities` verifies the latest nflverse, FFC, and manual ESPN captures, refreshes the DuckDB review queue, and exports an editable worksheet to `data/processed/identity/identity_review_queue.csv`. Exact platform-ID evidence may resolve automatically. Name-based comparisons only propose candidates; they never create a confirmed mapping without human approval. FFC team-defense rows (`DEF`, `DST`, or `D/ST`) are explicitly excluded from player mapping.
+
+To approve, remap, or dismiss pending rows, edit the exported worksheet and fill in `resolution`, `reviewed_at`, and `reviewer`. A remap or dismissal also requires `notes`. Then apply the decisions:
+
+```powershell
+fantasy-draft data apply-identity-overrides data\processed\identity\identity_review_queue.csv
+fantasy-draft data review-identities
+fantasy-draft data audit
+```
+
+The override command validates the complete worksheet before writing, archives the reviewed CSV unchanged with a SHA-256 manifest, and applies all decisions in one transaction. Reapplying an identical worksheet is a safe no-op. Confirmed source mappings are retained in `player_source_mappings` for later queue refreshes, and reviewed canonical identity state survives later nflverse loads.
 
 ## Learn the system
 
@@ -69,7 +84,7 @@ Network commands preserve timestamped raw files. Add `--offline` to reuse an exi
 
 ## Data boundaries
 
-Downloaded data, manual uploads, DuckDB files, and trained artifacts are ignored by Git. Small templates and clearly labeled fixtures are versioned. Never commit league exports containing private or identifying information without reviewing and pseudonymizing them first.
+Downloaded data, generated review worksheets, manual uploads, DuckDB files, and trained artifacts are ignored by Git. Small templates and clearly labeled fixtures are versioned. Never commit league exports or completed identity-review worksheets containing private or identifying information without reviewing and pseudonymizing them first.
 
 ## Attribution
 

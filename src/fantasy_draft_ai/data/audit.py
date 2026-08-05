@@ -46,5 +46,36 @@ def audit_project_data(config: AppConfig) -> AuditResult:
                 failures.append(f"Hash mismatch: {relative}")
             else:
                 verified += 1
-    counts = Warehouse(config.resolve(config.paths.warehouse)).table_counts()
+    warehouse = Warehouse(config.resolve(config.paths.warehouse))
+    counts = warehouse.table_counts()
+    if warehouse.path.exists():
+        with warehouse.connect(read_only=True) as connection:
+            orphan_mappings = connection.execute(
+                "SELECT count(*) FROM player_source_mappings m LEFT JOIN players p "
+                "ON m.player_id = p.player_id WHERE p.player_id IS NULL"
+            ).fetchone()
+            orphan_candidates = connection.execute(
+                "SELECT count(*) FROM identity_review_queue q LEFT JOIN players p "
+                "ON q.candidate_player_id = p.player_id "
+                "WHERE q.candidate_player_id IS NOT NULL AND p.player_id IS NULL"
+            ).fetchone()
+            if orphan_mappings is None or int(orphan_mappings[0]):
+                failures.append("Canonical identity mappings contain orphan player IDs.")
+            if orphan_candidates is None or int(orphan_candidates[0]):
+                failures.append("Identity review candidates contain orphan player IDs.")
+            for column in (
+                "gsis_id",
+                "espn_id",
+                "sleeper_id",
+                "yahoo_id",
+                "mfl_id",
+                "fleaflicker_id",
+                "fantasypros_id",
+            ):
+                duplicate = connection.execute(
+                    f"SELECT count(*) FROM (SELECT {column} FROM players "
+                    f"WHERE {column} IS NOT NULL GROUP BY {column} HAVING count(*) > 1)"
+                ).fetchone()
+                if duplicate is None or int(duplicate[0]):
+                    failures.append(f"Players contain duplicate non-null {column} values.")
     return AuditResult(len(manifest_paths), verified, tuple(failures), counts)

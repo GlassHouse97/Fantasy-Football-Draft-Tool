@@ -46,6 +46,22 @@ The player dimension uses GSIS IDs as internal IDs and never joins on display na
 
 The nflverse player capture is a current global identity snapshot, not a table limited to the requested stat seasons. Historical feature code must use weekly team context and explicit cutoffs rather than treating current identity attributes as historical facts.
 
+## Player identity review and overrides
+
+`fantasy-draft data review-identities` reads the latest verified nflverse, FFC, and manual ESPN captures and compares their source identities with canonical `players`. Each logical observation receives a deterministic `review_id` based on its issue type, source, and source player ID. Refreshing the same evidence updates that queue record instead of manufacturing another review. Records that disappear from the latest source evidence remain available for audit with `is_current = false`.
+
+The queue separates evidence from decisions:
+
+- `identity_review_queue` stores source evidence, a proposed canonical candidate, confidence, current status, and any human resolution.
+- `player_source_mappings` is the durable registry of reviewed `(source, source_player_id) -> player_id` decisions, including reviewer, timestamp, notes, and manifest provenance.
+- the exported CSV under `data/processed/identity/` is an editable working copy, not an authoritative automatic mapping.
+
+Stable source IDs are authoritative evidence when they already agree with the canonical registry. Normalized name, suffix, position, and team comparisons can produce `high`, `medium`, or `low` candidates, but every name-derived candidate remains `pending` until a human confirms or remaps it. Display name alone is never a join key. Ambiguous or missing candidates remain unresolved. FFC team-defense observations normalized to `DEF` are marked `excluded` because the canonical player dimension models people, not defense units.
+
+`fantasy-draft data apply-identity-overrides PATH` accepts only decisions tied to an existing review ID. It validates source evidence, canonical targets, timestamps, reviewers, collisions, and resolution rules before archiving the submitted CSV unchanged. Approved decisions update the queue, mapping registry, and relevant canonical identity fields in one DuckDB transaction. Any failure rolls back the entire operation. Identical decisions are matched as no-ops, conflicting final decisions are rejected, and a stable nflverse GSIS ID cannot be remapped by name. The nflverse loader reapplies reviewed identity evidence after source refreshes so a later load cannot silently erase a human decision.
+
+Phase 2 ends at this validated identity boundary. Phase 3 may build cutoff-safe player-season features, but model training remains disabled until feature row accounting, regular-season semantics, provenance, and leakage tests pass.
+
 ## Interfaces chosen in Phase 0
 
 - Python 3.11 is the canonical runtime.

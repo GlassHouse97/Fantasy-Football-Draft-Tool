@@ -12,7 +12,21 @@ class MappingConfidence(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
+    REVIEWED = "reviewed"
     UNRESOLVED = "unresolved"
+
+
+class IdentityReviewStatus(StrEnum):
+    PENDING = "pending"
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"
+    EXCLUDED = "excluded"
+
+
+class IdentityResolution(StrEnum):
+    CONFIRMED = "confirmed"
+    REMAPPED = "remapped"
+    DISMISSED = "dismissed"
 
 
 class PlayerIdentity(BaseModel):

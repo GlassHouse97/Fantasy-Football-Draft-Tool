@@ -23,7 +23,7 @@
 - [ ] Add optional Sleeper league import.
 - [ ] Add league-history package import.
 
-## Phase 2 — scoring, rules, and identity
+## Phase 2 — scoring, rules, and identity (complete)
 
 - [x] Implement deterministic normalized rules and SHA-256 fingerprints.
 - [x] Implement configurable component-based scoring.
@@ -31,11 +31,22 @@
 - [x] Implement starter-demand estimates and two replacement definitions.
 - [x] Add a plain-English learning chapter and executable notebook.
 - [x] Define identity records with mapping confidence and conflict rules.
-- [ ] Build a review queue that resolves real source rows across platforms.
+- [x] Build a deterministic review queue from verified nflverse, FFC, and ESPN evidence.
+- [x] Keep all name-derived candidates pending until explicit human approval.
+- [x] Exclude FFC team-defense rows from the canonical player identity workflow.
+- [x] Validate and immutably archive manual override worksheets.
+- [x] Persist reviewed source mappings and preserve them across repeat imports and nflverse reloads.
+
+## Phase 3 — projection baselines (next)
+
+- [ ] Define regular-season aggregation and explicit cutoff semantics.
+- [ ] Build `player_season_features` idempotently with source provenance and row accounting.
+- [ ] Add missingness indicators and keep targets separate from feature construction.
+- [ ] Prove chronological isolation with deterministic leakage tests.
+- [ ] Validate canonical feature tables before beginning any model training.
 
 ## Future phases
 
-- [ ] Phase 3: cutoff-safe player-season features and transparent baselines.
 - [ ] Phase 4: regularized linear and boosted models, uncertainty, explanations, and model cards.
 - [ ] Phase 5: ADP movement archive and next-pick availability.
 - [ ] Phase 6: event-sourced snake draft and Monte Carlo optimization.
