@@ -6,12 +6,14 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import typer
 import yaml
 
 from fantasy_draft_ai.config import load_config
 from fantasy_draft_ai.data.audit import audit_project_data
+from fantasy_draft_ai.data.nflverse_loader import load_nflverse_to_warehouse
 from fantasy_draft_ai.data.sources.espn import import_espn_adp
 from fantasy_draft_ai.data.sources.ffc_adp import snapshot_ffc_adp
 from fantasy_draft_ai.data.sources.nflverse import download_nflverse
@@ -76,6 +78,24 @@ def download_nflverse_command(
     typer.echo(f"Weekly stats: {result.stats_path}")
     typer.echo(f"Manifest: {result.manifest_path}")
     typer.echo(f"Offline reuse: {result.reused_offline}")
+
+
+@data_app.command("load-nflverse")
+def load_nflverse_command(
+    manifest: Annotated[
+        Path | None,
+        typer.Option(
+            "--manifest",
+            help="Specific source manifest. Defaults to the newest complete nflverse manifest.",
+        ),
+    ] = None,
+) -> None:
+    """Validate and transactionally load archived nflverse data into DuckDB."""
+
+    result = load_nflverse_to_warehouse(load_config(), manifest_path=manifest)
+    typer.echo(result.render())
+    if not result.committed:
+        raise typer.Exit(code=2)
 
 
 @data_app.command("snapshot-ffc-adp")

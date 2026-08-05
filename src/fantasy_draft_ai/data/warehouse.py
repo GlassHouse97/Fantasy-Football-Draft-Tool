@@ -33,8 +33,12 @@ CREATE TABLE IF NOT EXISTS player_week_stats (
     season INTEGER NOT NULL,
     week INTEGER NOT NULL,
     player_id VARCHAR NOT NULL,
+    season_type VARCHAR,
+    game_id VARCHAR,
     nfl_team VARCHAR,
     opponent VARCHAR,
+    completions DOUBLE,
+    passing_attempts DOUBLE,
     passing_yards DOUBLE,
     passing_tds DOUBLE,
     interceptions DOUBLE,
@@ -47,10 +51,16 @@ CREATE TABLE IF NOT EXISTS player_week_stats (
     carries DOUBLE,
     two_point_conversions DOUBLE,
     fumbles_lost DOUBLE,
+    special_teams_tds DOUBLE,
+    field_goals_made DOUBLE,
+    field_goals_attempted DOUBLE,
+    extra_points_made DOUBLE,
+    extra_points_attempted DOUBLE,
     games_active DOUBLE,
     games_played DOUBLE,
     source VARCHAR NOT NULL,
     as_of TIMESTAMPTZ NOT NULL,
+    source_dataset_id VARCHAR,
     PRIMARY KEY (season, week, player_id, source)
 );
 
@@ -141,6 +151,19 @@ CREATE TABLE IF NOT EXISTS team_outcomes (
 );
 """
 
+MIGRATION_SQL = """
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS season_type VARCHAR;
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS game_id VARCHAR;
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS source_dataset_id VARCHAR;
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS completions DOUBLE;
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS passing_attempts DOUBLE;
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS special_teams_tds DOUBLE;
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS field_goals_made DOUBLE;
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS field_goals_attempted DOUBLE;
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS extra_points_made DOUBLE;
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS extra_points_attempted DOUBLE;
+"""
+
 
 class Warehouse:
     """Small explicit wrapper around the local DuckDB file."""
@@ -161,6 +184,7 @@ class Warehouse:
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.execute(SCHEMA_SQL)
+            connection.execute(MIGRATION_SQL)
 
     def table_counts(self) -> dict[str, int]:
         """Return row counts for every canonical table."""

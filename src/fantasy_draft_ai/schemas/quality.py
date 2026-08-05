@@ -31,6 +31,8 @@ class QualityReport(BaseModel):
     required_field_failures: int = Field(default=0, ge=0)
     duplicate_keys: int = Field(default=0, ge=0)
     unresolved_players: int = Field(default=0, ge=0)
+    excluded_rows: int = Field(default=0, ge=0)
+    identity_conflicts: int = Field(default=0, ge=0)
     impossible_picks_or_rounds: int = Field(default=0, ge=0)
     unsupported_lineup_slots: int = Field(default=0, ge=0)
     invalid_json_settings: int = Field(default=0, ge=0)
@@ -49,6 +51,8 @@ class QualityReport(BaseModel):
             f"Required-field failures: {self.required_field_failures}",
             f"Duplicate keys: {self.duplicate_keys}",
             f"Unresolved players: {self.unresolved_players}",
+            f"Excluded rows: {self.excluded_rows}",
+            f"Identity conflicts: {self.identity_conflicts}",
             f"Impossible picks/rounds: {self.impossible_picks_or_rounds}",
             f"Unsupported lineup slots: {self.unsupported_lineup_slots}",
             f"Invalid JSON settings: {self.invalid_json_settings}",

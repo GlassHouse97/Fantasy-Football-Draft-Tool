@@ -17,3 +17,17 @@ def test_warehouse_initialization_is_idempotent(tmp_path: Path) -> None:
         "draft_picks": 0,
         "team_outcomes": 0,
     }
+    with warehouse.connect(read_only=True) as connection:
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info('player_week_stats')").fetchall()
+        }
+    assert {
+        "season_type",
+        "game_id",
+        "source_dataset_id",
+        "field_goals_made",
+        "field_goals_attempted",
+        "extra_points_made",
+        "extra_points_attempted",
+    } <= columns
