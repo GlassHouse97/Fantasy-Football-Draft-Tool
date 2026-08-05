@@ -110,6 +110,44 @@ One active record per combined feature/target build. It binds the report and bas
 
 The validated Phase 3 build uses feature fingerprint `d2bdda170fcbf88ccfe0b3f437615583a0684057eebe1fc12aa65463a47cf9cf`, target fingerprint `dd759bbf87c146884e68425079b3a759d1d6d4bb434d5bccee6d9d91c98c56a9`, and combined build fingerprint `f195dcb17a1a386b2f2003d87a06921550235cbec62aecd0f4eda419aa664cd7`.
 
+## `player_projection_runs`
+
+The single authoritative Phase 4 run header. It binds the deterministic `run_id` to the frozen Phase 3 feature, target, build, scoring, and baseline-report fingerprints; model-feature and model-configuration fingerprints; chronological split definitions; persisted row counts; training timestamp; run status; and the registered publication payload, including the unique immutable-attempt `publication_id`. The six Phase 4 tables are staged as `validating`, audited, and promoted to `complete` inside one transaction; failure rolls back to the prior complete publication.
+
+The active run is `phase4-7ae8e9aed04bffca00c0`, with run fingerprint `7ae8e9aed04bffca00c04d05e623f8afd20877dcfa09ddf43a8c1a7e8c34db03`. Its Phase 3 fingerprints are unchanged from the validated baseline build.
+
+## `player_projection_models`
+
+One registered final estimator per `(run_id, model_family, target_name, position)`. Fields record chronological training seasons and row count, feature/categorical-feature names, selected hyperparameters, uncertainty method, package versions, and project-relative artifact/model-card paths with SHA-256 hashes and artifact byte size.
+
+The validated run registers 24 models: Ridge and histogram gradient boosting for four core positions and three targets. Registration does not make every model a champion; all final candidates remain auditable.
+
+## `player_projection_predictions`
+
+One candidate prediction per run, player, prediction season, target, and model family. `prediction_scope` distinguishes validation, test, and live rows; `fold_label` and `training_max_season` enforce chronology. `predicted_value` equals the residual-adjusted `p50`, while `p10` and `p90` carry empirical signed-residual bounds. Historical rows may have nullable actual values; live rows must not have actuals. Seven lineage fingerprints bind every row to its exact upstream data, rules, baselines, selected model feature set, and model configuration.
+
+The validated run stores 45,588 rows: 32,024 have evaluable historical actuals and 6,804 are live learned-candidate predictions. Learned intervals use earlier out-of-fold training residuals only.
+
+## `player_projection_champions`
+
+One decision per `(run_id, target_name, position)`, for 12 total routes. It records whether the selected source is `learned` or `baseline`, the selected model/baseline name, validation metric and value, reference baseline, improvement, and a payload containing the bootstrap decision evidence. The 2025 test does not participate in selection.
+
+Across 84 validation candidates, learned models won 9 routes: all total-points and games-active routes plus histogram gradient boosting for WR points per game. QB, RB, and TE points per game retain the `age_position_adjusted` baseline. A learned win requires lower pooled 2020-2024 MAE and a learned-minus-baseline 95% confidence-interval upper bound below zero.
+
+## `player_projection_evaluation_metadata`
+
+Exactly one evaluation record belongs to the active run. It binds the report fingerprint and all upstream/model fingerprints to prediction, evaluated, live, candidate, and champion row counts plus the complete report payload. It is the warehouse-side bridge between the authoritative attempt-scoped report and the selected board.
+
+## `player_projection_board`
+
+One served row per `(run_id, player_id, prediction_season)`. Each of the three targets stores P10/P50/P90, selected source, and selected name. `prediction_status` distinguishes learned, retained-baseline, and rookie-fallback behavior; `explanation_payload` contains target-level model factors or transparent fallback reasoning. The row repeats all lineage fingerprints, including the evaluation-report fingerprint, so the app cannot mix publications.
+
+The validated 2026 board has 1,367 rows. Learned selections use training-only residual intervals evaluated by season, position, and projection tier. Every baseline selection is point-only with `P10=P50=P90`. The same point-only rule applies to 233 rookie fallbacks—QB 21, RB 46, WR 114, and TE 52—because no valid historical preseason rookie-position cohort exists.
+
+## Phase 4 publication authority
+
+DuckDB and the registered attempt-scoped hashes are authoritative. Generated evaluation/registry files under `models/reports/<run_id>/<publication_id>/`, serialized artifacts, model cards, and diagnostic plots must remain project-relative and match their registered SHA-256 metadata. A deterministic `run_id` can therefore be retrained safely without overwriting an earlier attempt. `docs/PHASE_4_MODEL_EVALUATION.*` and `models/registry.json` are convenience mirrors, not independent sources of truth. Audit, status, and the app require exactly one complete current run, reconciled table counts and lineage, full live-board coverage, valid chronology/intervals, and matching registered files.
+
 ## `adp_snapshots`
 
 One row per player within a timestamped source snapshot and league configuration. `raw_source_row_id` makes normalization auditable.

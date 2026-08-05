@@ -222,6 +222,146 @@ CREATE TABLE IF NOT EXISTS baseline_evaluation_metadata (
     report_payload JSON NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS player_projection_runs (
+    run_id VARCHAR PRIMARY KEY,
+    feature_data_fingerprint VARCHAR NOT NULL,
+    target_data_fingerprint VARCHAR NOT NULL,
+    build_fingerprint VARCHAR NOT NULL,
+    scoring_ruleset_fingerprint VARCHAR NOT NULL,
+    baseline_report_fingerprint VARCHAR NOT NULL,
+    model_feature_fingerprint VARCHAR NOT NULL,
+    model_config_fingerprint VARCHAR NOT NULL,
+    split_seasons JSON NOT NULL,
+    feature_rows INTEGER NOT NULL,
+    target_rows INTEGER NOT NULL,
+    training_rows INTEGER NOT NULL,
+    prediction_rows INTEGER NOT NULL,
+    evaluated_rows INTEGER NOT NULL,
+    live_prediction_rows INTEGER NOT NULL,
+    candidate_rows INTEGER NOT NULL,
+    model_rows INTEGER NOT NULL,
+    champion_rows INTEGER NOT NULL,
+    status VARCHAR NOT NULL,
+    trained_at TIMESTAMPTZ NOT NULL,
+    run_payload JSON NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS player_projection_models (
+    model_id VARCHAR PRIMARY KEY,
+    run_id VARCHAR NOT NULL,
+    model_family VARCHAR NOT NULL,
+    target_name VARCHAR NOT NULL,
+    position VARCHAR NOT NULL,
+    training_seasons JSON NOT NULL,
+    training_rows INTEGER NOT NULL,
+    feature_names JSON NOT NULL,
+    categorical_feature_names JSON NOT NULL,
+    hyperparameters JSON NOT NULL,
+    uncertainty_method VARCHAR NOT NULL,
+    artifact_path VARCHAR NOT NULL,
+    artifact_sha256 VARCHAR NOT NULL,
+    artifact_size_bytes BIGINT NOT NULL,
+    model_card_path VARCHAR NOT NULL,
+    model_card_sha256 VARCHAR NOT NULL,
+    package_versions JSON NOT NULL,
+    UNIQUE (run_id, model_family, target_name, position)
+);
+
+CREATE TABLE IF NOT EXISTS player_projection_predictions (
+    run_id VARCHAR NOT NULL,
+    player_id VARCHAR NOT NULL,
+    prediction_season INTEGER NOT NULL,
+    position VARCHAR NOT NULL,
+    target_name VARCHAR NOT NULL,
+    model_family VARCHAR NOT NULL,
+    prediction_scope VARCHAR NOT NULL,
+    fold_label VARCHAR,
+    training_max_season INTEGER NOT NULL,
+    predicted_value DOUBLE NOT NULL,
+    p10 DOUBLE NOT NULL,
+    p50 DOUBLE NOT NULL,
+    p90 DOUBLE NOT NULL,
+    actual_value DOUBLE,
+    actual_games_active DOUBLE,
+    experience INTEGER,
+    experience_group VARCHAR NOT NULL,
+    feature_data_fingerprint VARCHAR NOT NULL,
+    target_data_fingerprint VARCHAR NOT NULL,
+    build_fingerprint VARCHAR NOT NULL,
+    scoring_ruleset_fingerprint VARCHAR NOT NULL,
+    baseline_report_fingerprint VARCHAR NOT NULL,
+    model_feature_fingerprint VARCHAR NOT NULL,
+    model_config_fingerprint VARCHAR NOT NULL,
+    PRIMARY KEY (run_id, player_id, prediction_season, target_name, model_family)
+);
+
+CREATE TABLE IF NOT EXISTS player_projection_champions (
+    run_id VARCHAR NOT NULL,
+    target_name VARCHAR NOT NULL,
+    position VARCHAR NOT NULL,
+    selected_source VARCHAR NOT NULL,
+    selected_name VARCHAR NOT NULL,
+    model_id VARCHAR,
+    selection_metric VARCHAR NOT NULL,
+    selection_value DOUBLE NOT NULL,
+    reference_baseline_name VARCHAR NOT NULL,
+    reference_baseline_value DOUBLE NOT NULL,
+    improvement DOUBLE NOT NULL,
+    selection_payload JSON NOT NULL,
+    PRIMARY KEY (run_id, target_name, position)
+);
+
+CREATE TABLE IF NOT EXISTS player_projection_evaluation_metadata (
+    report_fingerprint VARCHAR PRIMARY KEY,
+    run_id VARCHAR NOT NULL UNIQUE,
+    feature_data_fingerprint VARCHAR NOT NULL,
+    target_data_fingerprint VARCHAR NOT NULL,
+    build_fingerprint VARCHAR NOT NULL,
+    scoring_ruleset_fingerprint VARCHAR NOT NULL,
+    baseline_report_fingerprint VARCHAR NOT NULL,
+    model_feature_fingerprint VARCHAR NOT NULL,
+    model_config_fingerprint VARCHAR NOT NULL,
+    prediction_rows INTEGER NOT NULL,
+    evaluated_rows INTEGER NOT NULL,
+    live_prediction_rows INTEGER NOT NULL,
+    candidate_rows INTEGER NOT NULL,
+    champion_rows INTEGER NOT NULL,
+    report_payload JSON NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS player_projection_board (
+    run_id VARCHAR NOT NULL,
+    player_id VARCHAR NOT NULL,
+    prediction_season INTEGER NOT NULL,
+    position VARCHAR NOT NULL,
+    fantasy_points_per_game_p10 DOUBLE NOT NULL,
+    fantasy_points_per_game_p50 DOUBLE NOT NULL,
+    fantasy_points_per_game_p90 DOUBLE NOT NULL,
+    fantasy_points_per_game_selected_source VARCHAR NOT NULL,
+    fantasy_points_per_game_selected_name VARCHAR NOT NULL,
+    games_active_p10 DOUBLE NOT NULL,
+    games_active_p50 DOUBLE NOT NULL,
+    games_active_p90 DOUBLE NOT NULL,
+    games_active_selected_source VARCHAR NOT NULL,
+    games_active_selected_name VARCHAR NOT NULL,
+    fantasy_points_total_p10 DOUBLE NOT NULL,
+    fantasy_points_total_p50 DOUBLE NOT NULL,
+    fantasy_points_total_p90 DOUBLE NOT NULL,
+    fantasy_points_total_selected_source VARCHAR NOT NULL,
+    fantasy_points_total_selected_name VARCHAR NOT NULL,
+    prediction_status VARCHAR NOT NULL,
+    explanation_payload JSON NOT NULL,
+    feature_data_fingerprint VARCHAR NOT NULL,
+    target_data_fingerprint VARCHAR NOT NULL,
+    build_fingerprint VARCHAR NOT NULL,
+    scoring_ruleset_fingerprint VARCHAR NOT NULL,
+    baseline_report_fingerprint VARCHAR NOT NULL,
+    model_feature_fingerprint VARCHAR NOT NULL,
+    model_config_fingerprint VARCHAR NOT NULL,
+    evaluation_report_fingerprint VARCHAR NOT NULL,
+    PRIMARY KEY (run_id, player_id, prediction_season)
+);
+
 CREATE TABLE IF NOT EXISTS adp_snapshots (
     snapshot_id VARCHAR NOT NULL,
     source VARCHAR NOT NULL,
@@ -371,6 +511,12 @@ class Warehouse:
             "feature_build_metadata",
             "baseline_predictions",
             "baseline_evaluation_metadata",
+            "player_projection_runs",
+            "player_projection_models",
+            "player_projection_predictions",
+            "player_projection_champions",
+            "player_projection_evaluation_metadata",
+            "player_projection_board",
             "adp_snapshots",
             "league_rules",
             "draft_picks",
@@ -387,6 +533,48 @@ class Warehouse:
                     raise RuntimeError(f"DuckDB did not return a count for {table}.")
                 counts[table] = int(row[0])
             return counts
+
+
+def invalidate_player_projection_runs(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    build_fingerprint: str,
+    baseline_report_fingerprint: str | None = None,
+) -> int:
+    """Remove learned outputs whose frozen Phase 3 contract is no longer current.
+
+    Generated model files are immutable local artifacts and are intentionally not
+    deleted here. Their database registrations are removed transactionally, which
+    makes them harmless orphans that can be inspected or cleaned separately.
+    """
+
+    predicate = "build_fingerprint <> ?"
+    parameters: list[str] = [build_fingerprint]
+    if baseline_report_fingerprint is not None:
+        predicate += " OR baseline_report_fingerprint <> ?"
+        parameters.append(baseline_report_fingerprint)
+    stale = connection.execute(
+        f"SELECT count(*) FROM player_projection_runs WHERE {predicate}",
+        parameters,
+    ).fetchone()
+    stale_count = int(stale[0]) if stale is not None else 0
+    for table in (
+        "player_projection_board",
+        "player_projection_evaluation_metadata",
+        "player_projection_champions",
+        "player_projection_predictions",
+        "player_projection_models",
+    ):
+        connection.execute(
+            f"DELETE FROM {table} WHERE run_id IN "
+            f"(SELECT run_id FROM player_projection_runs WHERE {predicate})",
+            parameters,
+        )
+    connection.execute(
+        f"DELETE FROM player_projection_runs WHERE {predicate}",
+        parameters,
+    )
+    return stale_count
 
 
 def _ensure_feature_key_uniqueness(

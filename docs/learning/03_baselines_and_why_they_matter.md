@@ -91,7 +91,7 @@ Players do not age at the same rate across positions. This first transparent bas
                   \times f(position, age\ bucket)
 \]
 
-The current factors are fixed heuristic assumptions, not learned values. Phase 4 may estimate age curves, but each validation fold must then learn them only from older seasons. Calculating them with a validation player's future result would be leakage.
+The current factors are fixed heuristic assumptions, not learned values. Phase 4's Ridge and gradient-boosted candidates can learn associations involving age, but each validation fold learns them only from older seasons. Calculating them with a validation player's future result would be leakage.
 
 ### 4. Position-average shrinkage
 
@@ -188,7 +188,7 @@ If those 14 points came from only a few trustworthy games, a shrinkage baseline 
 
 Baselines do not know about a new coordinator, a rookie's college profile, an August injury, a depth-chart promotion, or a sudden team change unless those inputs are explicitly added with valid cutoffs. They are reference points, not final rankings. Their purpose is to set an honest performance bar for Phase 4 models.
 
-Phase 3 has not begun machine-learning training. Training starts only after the canonical tables, cutoff-safe features, baseline evaluation, and reported limitations have been accepted as the validated foundation for Phase 4.
+Phase 4 machine-learning training is now complete. The validated baselines still matter: each learned candidate had to beat its route's transparent baseline on chronological validation and clear the paired-bootstrap confidence gate before it could become the champion.
 
 ## Exercise
 

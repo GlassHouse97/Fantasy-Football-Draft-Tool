@@ -1,7 +1,7 @@
 .PHONY: install test lint typecheck check app
 
 install:
-	python -m pip install -e ".[dev]"
+	python -m pip install -e ".[modeling,dev]"
 
 test:
 	python -m pytest

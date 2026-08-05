@@ -1,0 +1,106 @@
+---
+title: "Rolling Resampling Audit"
+format: html
+execute:
+  echo: true
+  warning: false
+---
+
+## Question and boundary
+
+- **Question:** Do training seasons always precede the season being predicted?
+- **Data:** Distinct canonical prediction seasons and stored Phase 4 candidate predictions.
+- **Unit:** One expanding fold for the plan; one player/model/target prediction for the persisted audit.
+- **Target:** Any Phase 4 player target.
+- **Cutoff:** The latest training prediction season must be less than the evaluation season.
+- **Validation:** Expanding 2020-2024 validation followed by the frozen 2025 test.
+- **Caveat:** This document checks stored split metadata; Python owns the fit and all writes.
+
+```{r}
+library(DBI)
+library(dplyr)
+library(duckdb)
+library(knitr)
+library(rsample)
+library(tibble)
+
+find_project_root <- function(start = getwd()) {
+  candidate <- normalizePath(start, winslash = "/", mustWork = TRUE)
+  repeat {
+    if (file.exists(file.path(candidate, "pyproject.toml"))) return(candidate)
+    parent <- dirname(candidate)
+    if (identical(parent, candidate)) stop("Could not find the repository root.")
+    candidate <- parent
+  }
+}
+
+warehouse_path <- file.path(
+  find_project_root(), "data", "warehouse", "fantasy_football.duckdb"
+)
+warehouse_ready <- file.exists(warehouse_path)
+```
+
+```{r}
+available_seasons <- integer()
+stored_audit <- tibble()
+if (warehouse_ready) {
+  con <- dbConnect(duckdb::duckdb(), dbdir = warehouse_path, read_only = TRUE)
+  tables <- dbListTables(con)
+  if ("player_season_features" %in% tables) {
+    available_seasons <- dbGetQuery(
+      con,
+      "SELECT DISTINCT prediction_season FROM player_season_features ORDER BY 1"
+    )$prediction_season
+  }
+  if ("player_projection_predictions" %in% tables) {
+    stored_audit <- dbGetQuery(con, "
+      SELECT
+        prediction_season,
+        fold_label,
+        min(training_max_season) AS min_training_max_season,
+        max(training_max_season) AS max_training_max_season,
+        count(*) AS prediction_rows,
+        count(*) FILTER (WHERE training_max_season >= prediction_season) AS leakage_rows
+      FROM player_projection_predictions
+      WHERE actual_value IS NOT NULL
+      GROUP BY prediction_season, fold_label
+      ORDER BY prediction_season, fold_label
+    ") |> as_tibble()
+  }
+}
+```
+
+```{r}
+evaluation_seasons <- intersect(2020:2025, available_seasons)
+fold_plan <- lapply(evaluation_seasons, function(season) {
+  training <- available_seasons[available_seasons < season]
+  tibble(
+    evaluation_season = season,
+    fold_label = if_else(season == 2025, "test", "validation"),
+    training_seasons = paste(training, collapse = ", "),
+    training_max_season = if (length(training)) max(training) else NA_integer_,
+    passes_order_check = length(training) > 0 && max(training) < season
+  )
+}) |> bind_rows()
+
+if (nrow(fold_plan) > 0) {
+  kable(fold_plan)
+} else {
+  cat("No canonical seasons are available for a fold plan.\n")
+}
+```
+
+```{r}
+if (nrow(stored_audit) > 0) {
+  stopifnot(all(stored_audit$leakage_rows == 0))
+  kable(stored_audit)
+} else {
+  cat("No persisted Phase 4 predictions exist yet; run Python model training first.\n")
+}
+```
+
+```{r}
+if (exists("con")) dbDisconnect(con, shutdown = TRUE)
+```
+
+The validation labels above describe prediction seasons, not source-stat seasons. Any fitted imputation, scaling, encoding, tuning, or residual calibration must obey the same ordering.

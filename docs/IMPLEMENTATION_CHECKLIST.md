@@ -56,12 +56,32 @@
 - [x] Produce 167,565 baseline prediction rows and evaluate 80,060 rows with MAE, RMSE, median AE, rank, top-N, and segment metrics.
 - [x] Record the validated feature fingerprint `d2bdda170fcbf88ccfe0b3f437615583a0684057eebe1fc12aa65463a47cf9cf`, target fingerprint `dd759bbf87c146884e68425079b3a759d1d6d4bb434d5bccee6d9d91c98c56a9`, and build fingerprint `f195dcb17a1a386b2f2003d87a06921550235cbec62aecd0f4eda419aa664cd7`.
 - [x] Publish the learning chapter, executable notebook, and Phase 3 evaluation report.
-- [x] Keep historical ADP and historical rookie performance marked unavailable where cutoff-safe archives do not exist, and leave statistical/ML model status untrained.
+- [x] Keep historical ADP and historical rookie baseline performance marked unavailable where cutoff-safe archives do not exist.
+
+## Phase 4 — statistical and ML player models (complete)
+
+- [x] Freeze the validated Phase 3 feature, target, build, scoring, baseline-report, and fold contract.
+- [x] Build position-specific, fold-local preprocessing and nested chronological tuning.
+- [x] Train Ridge and histogram gradient boosting for four positions and three targets; register 24 final estimators.
+- [x] Persist 45,588 predictions, including 32,024 evaluable and 6,804 live learned-candidate rows.
+- [x] Compare 84 learned/baseline candidates across 12 position/target routes.
+- [x] Select champions using pooled 2020-2024 MAE plus a paired-bootstrap confidence gate; reserve 2025 as a selection-blind test.
+- [x] Select learned models for all total-points and games-active routes plus histogram gradient boosting for WR points per game.
+- [x] Retain `age_position_adjusted` for QB, RB, and TE points per game when learned candidates do not clear the gate.
+- [x] Fit empirical P10/P50/P90 ranges from earlier out-of-fold training residuals and report coverage by season, position, and tier.
+- [x] Keep retained baselines and rookie fallbacks honest point estimates with `P10=P50=P90`.
+- [x] Publish a complete 1,367-row live board with explanations and explicit method/status labels.
+- [x] Keep 233 rookies out of learned models and label point-only fallbacks: QB 21, RB 46, WR 114, and TE 52.
+- [x] Write each forced attempt to immutable `<run_id>/<publication_id>/` report, registry, plot, model-card, and serialized-artifact paths with registered SHA-256 hashes.
+- [x] Stage, audit, and promote all six Phase 4 tables inside one rollback-safe DuckDB transaction.
+- [x] Require one complete current run with reconciled lineage, counts, chronology, board coverage, and file hashes before audit/status/app availability.
+- [x] Record run ID `phase4-7ae8e9aed04bffca00c0` and run fingerprint `7ae8e9aed04bffca00c04d05e623f8afd20877dcfa09ddf43a8c1a7e8c34db03`.
+- [x] Expose the validated board, filters, intervals, explanations, and lineage in the local Streamlit app.
+- [x] Keep ADP movement, next-pick availability, draft recommendations, and the draft engine explicitly unavailable.
 
 ## Future phases
 
-- [ ] Phase 4 (next): regularized linear and boosted models, uncertainty, explanations, and model cards.
-- [ ] Phase 5: ADP movement archive and next-pick availability.
+- [ ] Phase 5 (next): immutable dated ADP movement features/baselines and empirical next-pick availability; no supervised availability claim until snapshot volume is sufficient.
 - [ ] Phase 6: event-sourced snake draft and Monte Carlo optimization.
 - [ ] Phase 7: full multipage Streamlit workflow.
 - [ ] Phase 8: descriptive league-history analysis and gated outcome modeling.

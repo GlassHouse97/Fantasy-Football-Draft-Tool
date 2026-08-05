@@ -294,6 +294,11 @@ def audit_project_data(config: AppConfig) -> AuditResult:
                 ).fetchone()
                 if duplicate is None or int(duplicate[0]):
                     failures.append(f"Players contain duplicate non-null {column} values.")
+    from fantasy_draft_ai.models.player_projection.repository import (
+        projection_integrity_issues,
+    )
+
+    failures.extend(projection_integrity_issues(config))
     return AuditResult(len(manifest_paths), verified, tuple(failures), counts)
 
 

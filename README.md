@@ -1,12 +1,14 @@
 # 🏈 Fantasy Football Draft AI
 
+[![Quality gates](https://github.com/GlassHouse97/Fantasy-Football-Draft-Tool/actions/workflows/quality.yml/badge.svg)](https://github.com/GlassHouse97/Fantasy-Football-Draft-Tool/actions/workflows/quality.yml)
+
 A local-first NFL redraft assistant that turns historical football data, exact league rules, and current draft-market information into transparent recommendations. The goal is useful software **and** a practical course in sports modeling. No LLM decides who you should draft.
 
 ## What works today
 
 This first runnable foundation includes:
 
-- a packaged Python CLI and local Streamlit status app;
+- a packaged Python CLI and local Streamlit projection app;
 - immutable raw-file archives with SHA-256 manifests;
 - a DuckDB warehouse schema for the project’s canonical tables;
 - current `nflreadpy` and Fantasy Football Calculator adapters with offline reuse;
@@ -18,9 +20,11 @@ This first runnable foundation includes:
 - configurable fantasy scoring, explicit FLEX/SUPERFLEX eligibility, and two replacement-value definitions;
 - cutoff-safe player-season features, separately persisted future targets, and source provenance;
 - five transparent projection baselines evaluated on expanding 2020-2025 folds;
-- tests for data integrity, leakage, chronological evaluation, scoring, rules, and replacement value.
+- position-specific Ridge and histogram gradient-boosting models with validation-gated champions;
+- a validated 2026 projection board with P10/P50/P90 displays and player explanations;
+- tests for data integrity, leakage, chronological evaluation, model selection, publication integrity, scoring, rules, and replacement value.
 
-Phase 3 is complete, but no statistical or machine-learning player model has been trained. The available projections are labeled transparent heuristics. Regularized and boosted models, uncertainty, availability modeling, draft simulation, and the full live draft room remain later phases; the app reports those boundaries instead of inventing results.
+Phases 0 through 4 are complete. The app now exposes the validated player-projection board and explanations, clearly labeling learned models, retained transparent baselines, and unvalidated rookie fallbacks. ADP movement, empirical next-pick availability, draft recommendations, and the draft engine remain future work; the app reports those boundaries instead of inventing results.
 
 ## Local setup (Windows PowerShell)
 
@@ -30,9 +34,16 @@ Python 3.11 is the recommended runtime for the current dependency set.
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[modeling,dev]"
 fantasy-draft data init-warehouse
 fantasy-draft status
+```
+
+To run the educational notebooks, install the notebook tooling alongside the modeling and
+development dependencies:
+
+```powershell
+python -m pip install -e ".[modeling,notebooks,dev]"
 ```
 
 Run every quality gate:
@@ -46,7 +57,7 @@ python -m pytest
 Start the local UI:
 
 ```powershell
-python -m streamlit run app.py
+fantasy-draft app
 ```
 
 ## First data commands
@@ -99,7 +110,26 @@ The validated PPR build produced 11,171 feature rows, 9,804 historical target ro
 
 Reproducibility uses three hashes: feature `d2bdda170fcbf88ccfe0b3f437615583a0684057eebe1fc12aa65463a47cf9cf`, target `dd759bbf87c146884e68425079b3a759d1d6d4bb434d5bccee6d9d91c98c56a9`, and combined build `f195dcb17a1a386b2f2003d87a06921550235cbec62aecd0f4eda419aa664cd7`. Rebuilding identical inputs reproduced all three. A feature or target change invalidates dependent baseline rows until evaluation is rerun.
 
-Five deterministic baselines generated 167,565 prediction rows, of which 80,060 had an evaluable historical target across the 2020-2025 folds. The age- and position-adjusted baseline had the best aggregate points-per-game MAE at 2.581 and total-points MAE at 33.324. The report separates the all-candidate attrition view from positive-game accuracy and counts 6,464 evaluation candidates: 3,102 with positive games, 3,344 with zero games, and 18 with unavailable active-game outcomes. Current ADP was not backfilled into historical folds because no cutoff-safe historical archive exists. No statistical or machine-learning model training has begun; Phase 4 starts that work.
+Five deterministic baselines generated 167,565 prediction rows, of which 80,060 had an evaluable historical target across the 2020-2025 folds. The age- and position-adjusted baseline had the best aggregate points-per-game MAE at 2.581 and total-points MAE at 33.324. The report separates the all-candidate attrition view from positive-game accuracy and counts 6,464 evaluation candidates: 3,102 with positive games, 3,344 with zero games, and 18 with unavailable active-game outcomes. Current ADP was not backfilled into historical folds because no cutoff-safe historical archive exists. These frozen Phase 3 fingerprints and folds remain the comparison contract for Phase 4.
+
+## Reproduce the Phase 4 model run
+
+Phase 4 trains one Ridge and one histogram gradient-boosting model for each QB/RB/WR/TE and points-per-game/games-active/total-points route. It uses pooled 2020-2024 validation for selection and reserves 2025 as a final test that never selects a champion.
+
+```powershell
+fantasy-draft models train-player-models --rules configs/example_ppr_12_team.yaml --validation-start-season 2020 --test-season 2025 --output docs/PHASE_4_MODEL_EVALUATION.md
+fantasy-draft data audit
+fantasy-draft status
+fantasy-draft app
+```
+
+The validated run is `phase4-7ae8e9aed04bffca00c0`, with run fingerprint `7ae8e9aed04bffca00c04d05e623f8afd20877dcfa09ddf43a8c1a7e8c34db03`. It registered 24 models, persisted 45,588 predictions (32,024 evaluable and 6,804 live learned-candidate predictions), compared 84 selection candidates, selected 12 position/target champions, and materialized 1,367 live board rows.
+
+A learned candidate is selected only when its pooled validation MAE is below the best transparent baseline and the paired-bootstrap 95% confidence interval for learned-minus-baseline MAE has an upper bound below zero. That gate selected learned models for 9 of 12 routes: every total-points and games-active route plus histogram gradient boosting for WR points per game. QB, RB, and TE points per game retain the age/position-adjusted baseline.
+
+Learned P10/P50/P90 ranges use signed residuals from training-only, earlier out-of-fold predictions and are evaluated by season, position, and projection tier. A retained baseline remains an honest point estimate with `P10=P50=P90`. The 233 live rookies also use point-only transparent fallbacks because Phase 3 has no historical preseason rookie-position cohort: QB 21, RB 46, WR 114, and TE 52.
+
+DuckDB is authoritative for the one active deterministic run. Every training attempt receives an immutable `publication_id`, and its reports, registry, diagnostic plots, model cards, and serialized artifacts live beneath `<run_id>/<publication_id>/` paths verified by registered SHA-256 hashes. All six Phase 4 tables are staged, audited, and promoted in one DuckDB transaction, so a failed forced retry rolls back to the previously complete publication. The top-level Phase 4 report and `models/registry.json` are convenience mirrors refreshed only after commit. Audit, status, and the app reject partial, stale, orphaned, count-mismatched, or hash-mismatched publication state.
 
 ## Learn the system
 
@@ -111,11 +141,14 @@ Five deterministic baselines generated 167,565 prediction rows, of which 80,060 
 - [Projection baselines and why they matter](docs/learning/03_baselines_and_why_they_matter.md)
 - [Projection baseline notebook](notebooks/python/03_projection_baselines.ipynb)
 - [Phase 3 baseline evaluation](docs/PHASE_3_BASELINE_EVALUATION.md)
+- [Phase 4 model evaluation](docs/PHASE_4_MODEL_EVALUATION.md)
+- [Active Phase 4 model registry](models/registry.json)
+- [How to read a model card](docs/learning/12_how_to_read_a_model_card.md)
 - [Next steps](docs/NEXT_STEPS.md)
 
 ## Data boundaries
 
-Downloaded data, generated review worksheets, manual uploads, DuckDB files, and trained artifacts are ignored by Git. Small templates and clearly labeled fixtures are versioned. Never commit league exports or completed identity-review worksheets containing private or identifying information without reviewing and pseudonymizing them first.
+Downloaded data, generated review worksheets, manual uploads, DuckDB files, serialized estimators, and authoritative attempt-scoped reports are ignored by Git. Publication-safe evaluation mirrors, model cards, and diagnostic figures may be versioned with their registered hashes; small templates and clearly labeled fixtures are also versioned. Never commit league exports or completed identity-review worksheets containing private or identifying information without reviewing and pseudonymizing them first.
 
 ## Attribution
 
