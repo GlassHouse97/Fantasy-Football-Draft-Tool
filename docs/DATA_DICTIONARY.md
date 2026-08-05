@@ -4,17 +4,22 @@ The DuckDB schema is created by `fantasy-draft data init-warehouse`. Types below
 
 ## `players`
 
-One row per internal player identity. For nflverse imports, the stable GSIS ID is also the internal `player_id`. Cross-platform IDs are nullable. `mapping_confidence` is `exact` for a consistent source-ID record, `high` for a stable-ID record with conflicting names, and `reviewed` when a human decision changes canonical identity metadata. Reviewed external-source confidence is stored on `player_source_mappings` rather than replacing an otherwise exact canonical GSIS identity. `mapping_source` includes either the nflverse manifest dataset ID or the immutable manual-review manifest ID so the evidence is traceable. `nfl_team`, experience, and active status describe the identity snapshot at acquisition time and must not be treated as historical features. `is_active` is true only for `ACT` players whose `last_season` reaches the configured prediction season, false for clearly historical or cut/released records, and null for ambiguous reserve, development, or suspension statuses.
+One row per internal player identity. For nflverse imports, the stable GSIS ID is also the internal `player_id`. Cross-platform IDs are nullable. `mapping_confidence` is `exact` for a consistent source-ID record, `high` for a stable-ID record with conflicting names, and `reviewed` when a human decision changes canonical identity metadata. Reviewed external-source confidence is stored on `player_source_mappings` rather than replacing an otherwise exact canonical GSIS identity. `mapping_source` includes either the nflverse manifest dataset ID or the immutable manual-review manifest ID so the evidence is traceable. `identity_source_dataset_id` and `identity_source_as_of` identify the player capture and acquisition time that supplied static feature evidence. `nfl_team`, experience, and active status describe the identity snapshot at acquisition time and must not be treated as historical features. `is_active` is true only for `ACT` players whose `last_season` reaches the configured prediction season, false for clearly historical or cut/released records, and null for ambiguous reserve, development, or suspension statuses.
 
 | Canonical field | nflverse source |
 |---|---|
 | `player_id`, `gsis_id` | `gsis_id` |
+| `pfr_id` | `pfr_id` |
 | `espn_id` | `espn_id` |
 | `display_name` | trimmed `display_name` |
 | `canonical_position` | uppercase `position` |
 | `nfl_team` | uppercase `latest_team` |
 | `birth_date` | safely parsed `birth_date` |
 | `experience` | `years_of_experience` |
+| `rookie_season`, draft fields | `rookie_season`, `draft_year`, `draft_round`, `draft_pick`, `draft_team` |
+| physical profile | parsed height and weight fields where available; weight remains identity-only until historical time semantics exist |
+| `identity_source_dataset_id` | nflverse player manifest dataset ID |
+| `identity_source_as_of` | nflverse player manifest acquisition timestamp; gates static-position fallback against the row cutoff |
 | platform IDs | source value on insert; every existing non-null curated value wins on refresh |
 
 ## `player_source_mappings`
@@ -46,12 +51,13 @@ Exact platform-ID matches and previously reviewed registry mappings may be resol
 
 ## `player_week_stats`
 
-One row per player, season, and week with passing, rushing, receiving, kicking, turnover, and opportunity components. `season_type` and `game_id` preserve regular/postseason and game context. `source`, `as_of`, and `source_dataset_id` preserve provenance. `games_played` and `games_active` remain null because the weekly stats capture does not directly establish either indicator.
+One row per player, season, and week with historical position, passing, rushing, receiving, kicking, turnover, and opportunity components. `season_type` and `game_id` preserve regular/postseason and game context. `source`, `as_of`, and `source_dataset_id` preserve provenance. `games_played` and `games_active` remain null because the weekly stats capture does not directly establish either indicator; Phase 3 participation comes from snap counts instead.
 
 Most stat names map directly. Important renamed or derived fields are:
 
 | Canonical field | nflverse source |
 |---|---|
+| `position` | historical weekly `position` |
 | `passing_attempts` | `attempts` |
 | `interceptions` | `passing_interceptions` |
 | `two_point_conversions` | passing + rushing + receiving two-point conversions |
@@ -62,9 +68,47 @@ Most stat names map directly. Important renamed or derived fields are:
 
 Rows without player IDs are never assigned invented identities. Zero-stat placeholders are counted, reported, and excluded. A non-null weekly player ID absent from `players` is fatal and prevents the transaction from committing.
 
+## `player_game_participation`
+
+One row per mapped player and game from immutable PFR snap counts distributed by nflverse. `pfr_player_id` maps through `players.pfr_id`; `player_id` remains the canonical GSIS-oriented identity. `position`, team, and opponent are historical game context. `source`, `as_of`, and `source_dataset_id` retain capture provenance.
+
+| Field group | Fields and meaning |
+|---|---|
+| Logical key | `game_id`, `player_id`, and source |
+| Source identity | `pfr_game_id`, `pfr_player_id` |
+| Historical context | season, week, game/season type, position, team, opponent |
+| Participation | offense, defense, and special-teams snaps plus source percentages |
+| Provenance | source `nflverse_pfr_snap_counts`, archive timestamp, dataset ID |
+
+An active game is counted only when `offense_snaps + defense_snaps + special_teams_snaps > 0`. A new complete capture replaces only nflverse rows in its manifest season scope; other seasons and sources remain untouched. Postseason records are stored but excluded from regular-season feature aggregation.
+
 ## `player_season_features`
 
-One row per player and feature season. `cutoff_date` proves when the features were considered available. Future targets are stored separately from feature selection logic. This table is a Phase 3 target and must not be used for model training until its regular-season rules, provenance, row accounting, and leakage tests are validated.
+One row per player and prediction season, with unique logical key `(player_id, prediction_season)`. `feature_season = prediction_season - 1`. `cutoff_date` and `feature_available_at` are September 1 of the prediction season: a logical preseason cutoff, not the later local acquisition date. `source_max_as_of` separately records the newest 2026 archive timestamp used by the row.
+
+`feature_payload` contains cutoff-safe lag-one and weighted three-year production, component rates, prior position means, rookie/sparse-history fallbacks, age, height, static draft fields, team-change context, transparent baseline inputs, candidate-selection evidence, and missingness flags. The candidate proxy uses four prior seasons plus current/prior rookie cohorts, while only three seasons enter weighted production. Historical weekly/participation position takes precedence. Static identity position is allowed only when `identity_source_as_of` is no later than the preseason cutoff; current team, weight, experience, and active status are excluded. `target_payload` is retained only as a nullable compatibility column and is not populated by the Phase 3 builder.
+
+`feature_version`, scoring ruleset fingerprint, source dataset IDs, maximum contributing stat season, source timestamp, and data fingerprint make each build auditable. The validated set contains 11,171 rows, including 1,367 live 2026 rows without known outcomes. Of these, 309 use a cutoff-safe static identity position. Another 2,710 current-core historical entry-cohort candidates lacked a cutoff-safe position and were excluded rather than inheriting the current snapshot. That exclusion prevents later position conversions from leaking backward, but historical rookie baseline performance remains unavailable until a historical preseason-position archive exists.
+
+## `player_season_targets`
+
+One separately persisted outcome row per player and historical prediction season. `target_payload` contains next-season `fantasy_points_per_game`, `games_active`, and `fantasy_points_total`. The target table carries its own version, ruleset fingerprint, source dataset IDs, maximum archive timestamp, feature-data fingerprint, and target-only fingerprint. A nonzero-stat game without mapped positive-snap evidence makes that player-season's participation-dependent outcomes null instead of creating a partial denominator.
+
+The validated set contains 9,804 rows. Fifteen player-seasons have a nonzero-stat game without complete mapped snap participation; 28 target rows therefore retain total points while participation-dependent games-active and points-per-game values are null. Targets never enter the feature payload.
+
+## `feature_build_metadata`
+
+One active record binds the feature-only fingerprint, target-only fingerprint, combined build fingerprint, feature version, prediction-season range, row counts, ruleset, source dataset IDs, maximum acquisition timestamp, and full quality payload. Target-only changes preserve feature identity but change the combined build and invalidate downstream baseline outputs.
+
+## `baseline_predictions`
+
+One row per player, prediction season, target, and transparent baseline. It stores predicted value, nullable actual value, position, experience group, baseline version, feature fingerprint, target fingerprint, combined build fingerprint, and scoring-ruleset fingerprint. The five baselines are previous season, weighted history, age/position adjusted, position shrinkage, and weighted components.
+
+## `baseline_evaluation_metadata`
+
+One active record per combined feature/target build. It binds the report and baseline versions to feature, target, build, and scoring fingerprints plus prediction/evaluated row counts, chronological folds, upstream quality warnings, candidate outcome counts, metrics, limitations, and unavailable comparisons. Metrics include the all-candidate attrition view and separately labeled positive-game diagnostics. These records describe transparent heuristics, not a trained ML model.
+
+The validated Phase 3 build uses feature fingerprint `d2bdda170fcbf88ccfe0b3f437615583a0684057eebe1fc12aa65463a47cf9cf`, target fingerprint `dd759bbf87c146884e68425079b3a759d1d6d4bb434d5bccee6d9d91c98c56a9`, and combined build fingerprint `f195dcb17a1a386b2f2003d87a06921550235cbec62aecd0f4eda419aa664cd7`.
 
 ## `adp_snapshots`
 

@@ -53,6 +53,7 @@ def _player(
     return {
         "gsis_id": player_id,
         "display_name": name,
+        "pfr_id": f"pfr-{player_id}",
         "espn_id": f"espn-{player_id}",
         "birth_date": "2000-01-02",
         "position": position,
@@ -60,6 +61,13 @@ def _player(
         "status": "ACT",
         "last_season": 2026,
         "years_of_experience": 3,
+        "rookie_season": 2022,
+        "draft_year": 2022,
+        "draft_round": 2,
+        "draft_pick": 45,
+        "draft_team": team,
+        "height": 73,
+        "weight": 205,
     }
 
 

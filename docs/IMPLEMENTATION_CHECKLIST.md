@@ -37,17 +37,30 @@
 - [x] Validate and immutably archive manual override worksheets.
 - [x] Persist reviewed source mappings and preserve them across repeat imports and nflverse reloads.
 
-## Phase 3 — projection baselines (next)
+## Phase 3 — projection baselines (complete)
 
-- [ ] Define regular-season aggregation and explicit cutoff semantics.
-- [ ] Build `player_season_features` idempotently with source provenance and row accounting.
-- [ ] Add missingness indicators and keep targets separate from feature construction.
-- [ ] Prove chronological isolation with deterministic leakage tests.
-- [ ] Validate canonical feature tables before beginning any model training.
+- [x] Archive nflverse/PFR game-level snap counts immutably with hashes, manifests, and offline reuse.
+- [x] Load mapped snap participation transactionally and idempotently.
+- [x] Define an active game as positive offense, defense, or special-teams snaps.
+- [x] Preserve historical weekly position and static-player source provenance, including the identity snapshot acquisition time.
+- [x] Define regular-season aggregation, postseason exclusion, and September 1 cutoff semantics.
+- [x] Build 11,171 `player_season_features` rows idempotently with explicit provenance and row accounting, including 1,367 live 2026 rows.
+- [x] Persist 9,804 future outcomes separately in `player_season_targets`.
+- [x] Add rookie/sparse-history fallbacks and explicit missingness indicators.
+- [x] Allow static position only from an identity snapshot available by the preseason cutoff; use it for 309 rows in the validated build.
+- [x] Exclude and report 2,710 historical entry-cohort candidates without cutoff-safe position evidence instead of leaking the current snapshot backward.
+- [x] Keep 15 participation coverage failures and 28 affected target rows nullable instead of inventing games active or points per game.
+- [x] Report 1,117 target scorers and 1,390 active target players outside the cutoff-safe candidate universe.
+- [x] Prove `t -> t+1` isolation, target exclusion, source provenance, and chronological folds with deterministic tests.
+- [x] Evaluate expanding 2020-2025 folds using previous-season, weighted-history, age/position-adjusted, position-shrinkage, and weighted-component baselines.
+- [x] Produce 167,565 baseline prediction rows and evaluate 80,060 rows with MAE, RMSE, median AE, rank, top-N, and segment metrics.
+- [x] Record the validated feature fingerprint `d2bdda170fcbf88ccfe0b3f437615583a0684057eebe1fc12aa65463a47cf9cf`, target fingerprint `dd759bbf87c146884e68425079b3a759d1d6d4bb434d5bccee6d9d91c98c56a9`, and build fingerprint `f195dcb17a1a386b2f2003d87a06921550235cbec62aecd0f4eda419aa664cd7`.
+- [x] Publish the learning chapter, executable notebook, and Phase 3 evaluation report.
+- [x] Keep historical ADP and historical rookie performance marked unavailable where cutoff-safe archives do not exist, and leave statistical/ML model status untrained.
 
 ## Future phases
 
-- [ ] Phase 4: regularized linear and boosted models, uncertainty, explanations, and model cards.
+- [ ] Phase 4 (next): regularized linear and boosted models, uncertainty, explanations, and model cards.
 - [ ] Phase 5: ADP movement archive and next-pick availability.
 - [ ] Phase 6: event-sourced snake draft and Monte Carlo optimization.
 - [ ] Phase 7: full multipage Streamlit workflow.

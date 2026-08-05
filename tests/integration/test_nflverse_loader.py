@@ -47,6 +47,7 @@ def _player(
     return {
         "gsis_id": player_id,
         "display_name": name,
+        "pfr_id": f"pfr-{player_id}",
         "espn_id": f"espn-{player_id}",
         "birth_date": "2000-01-02",
         "position": position,
@@ -54,6 +55,13 @@ def _player(
         "status": status,
         "last_season": last_season,
         "years_of_experience": 3,
+        "rookie_season": 2022,
+        "draft_year": 2022,
+        "draft_round": 2,
+        "draft_pick": 45,
+        "draft_team": "BUF",
+        "height": 73,
+        "weight": 205,
     }
 
 
@@ -193,7 +201,9 @@ def test_load_normalizes_reports_and_is_idempotent(tmp_path: Path) -> None:
     warehouse = Warehouse(config.resolve(config.paths.warehouse))
     with warehouse.connect() as connection:
         players = connection.execute(
-            "SELECT player_id, mapping_confidence, is_active, mapping_source "
+            "SELECT player_id, mapping_confidence, is_active, mapping_source, pfr_id, "
+            "rookie_season, draft_year, draft_round, draft_pick, draft_team, "
+            "height_inches, weight_lbs, identity_source_dataset_id, identity_source_as_of "
             "FROM players ORDER BY player_id"
         ).fetchall()
         stat = connection.execute(
@@ -204,7 +214,8 @@ def test_load_normalizes_reports_and_is_idempotent(tmp_path: Path) -> None:
             "source_dataset_id FROM player_week_stats WHERE player_id = 'p1'"
         ).fetchone()
         connection.execute(
-            "UPDATE players SET espn_id = 'manual-espn-p1', sleeper_id = 'sleeper-p1', "
+            "UPDATE players SET pfr_id = 'manual-pfr-p1', "
+            "espn_id = 'manual-espn-p1', sleeper_id = 'sleeper-p1', "
             "mapping_confidence = 'reviewed', mapping_source = 'manual:identity-review' "
             "WHERE player_id = 'p1'"
         )
@@ -213,6 +224,9 @@ def test_load_normalizes_reports_and_is_idempotent(tmp_path: Path) -> None:
     assert players[1][0:3] == ("p2", "high", None)
     assert players[2][0:3] == ("p3", "exact", False)
     assert first.manifest.dataset_id in players[0][3]
+    assert players[0][4:12] == ("pfr-p1", 2022, 2022, 2, 45, "BUF", 73, 205)
+    assert players[0][12] == first.manifest.dataset_id
+    assert players[0][13] == ACQUIRED_AT
     assert stat is not None
     assert stat[0:12] == ("REG", "2025_01_BUF_MIA", 2, 3, 2, 3, 3, 1, 2, 3, 4, 5)
     assert stat[12] is None
@@ -230,7 +244,8 @@ def test_load_normalizes_reports_and_is_idempotent(tmp_path: Path) -> None:
             "SELECT * FROM player_week_stats ORDER BY season, week, player_id, source"
         ).fetchall()
         curated_identity = connection.execute(
-            "SELECT espn_id, sleeper_id, mapping_confidence, mapping_source "
+            "SELECT pfr_id, espn_id, sleeper_id, mapping_confidence, mapping_source, "
+            "identity_source_dataset_id, identity_source_as_of "
             "FROM players WHERE player_id = 'p1'"
         ).fetchone()
 
@@ -241,10 +256,13 @@ def test_load_normalizes_reports_and_is_idempotent(tmp_path: Path) -> None:
     assert second.weekly_stats.matched_existing_rows == 3
     assert before_repeat == after_repeat
     assert curated_identity == (
+        "manual-pfr-p1",
         "manual-espn-p1",
         "sleeper-p1",
         "reviewed",
         "manual:identity-review",
+        first.manifest.dataset_id,
+        ACQUIRED_AT,
     )
     assert raw_hashes == (sha256_file(player_path), sha256_file(stats_path))
 

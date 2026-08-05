@@ -115,18 +115,14 @@ class RawArchive:
         )
         return manifest, manifest_path
 
-    def find_manifest_for_files(
-        self, raw_files: list[Path]
-    ) -> tuple[SourceManifest, Path] | None:
+    def find_manifest_for_files(self, raw_files: list[Path]) -> tuple[SourceManifest, Path] | None:
         """Find an existing manifest for an identical raw-file set.
 
         Offline replay uses this to remain idempotent instead of manufacturing a
         second provenance record for files that were already archived.
         """
 
-        expected = {
-            path.resolve().relative_to(self.project_root).as_posix() for path in raw_files
-        }
+        expected = {path.resolve().relative_to(self.project_root).as_posix() for path in raw_files}
         if not self.manifest_root.exists():
             return None
         for manifest_path in sorted(self.manifest_root.glob("*.json")):

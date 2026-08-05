@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,7 +22,11 @@ def project_status(config: AppConfig) -> list[StatusItem]:
     raw_root = config.resolve(config.paths.raw_dir)
     ffc_files = sorted((raw_root / "ffc_adp").glob("*.json"))
     espn_files = sorted((raw_root / "espn_manual").glob("*.csv"))
-    nfl_files = sorted((raw_root / "nflverse").glob("*.parquet"))
+    nfl_player_files = sorted((raw_root / "nflverse").glob("nflverse_players__*.parquet"))
+    nfl_stat_files = sorted(
+        (raw_root / "nflverse").glob("nflverse_player_stats__weekly__*.parquet")
+    )
+    snap_count_files = sorted((raw_root / "nflverse").glob("nflverse_snap_counts__*.parquet"))
     warehouse = config.resolve(config.paths.warehouse)
 
     def latest_label(files: list[Path]) -> str:
@@ -29,18 +34,189 @@ def project_status(config: AppConfig) -> list[StatusItem]:
 
     identity_status = "not built; run fantasy-draft data review-identities"
     identity_available = False
+    feature_status = "not built; run fantasy-draft features build-player-seasons"
+    feature_available = False
+    baseline_status = "not evaluated; run fantasy-draft models evaluate-baselines"
+    baseline_available = False
     if warehouse.exists():
+        counts = None
+        feature_counts = None
+        baseline_counts = None
         try:
             with duckdb.connect(str(warehouse), read_only=True) as connection:
-                counts = connection.execute(
-                    "SELECT count(*) FILTER (WHERE status = 'pending' AND is_current), "
-                    "count(*) FILTER (WHERE status = 'resolved' AND is_current) "
-                    "FROM identity_review_queue"
-                ).fetchone()
+                with suppress(duckdb.Error):
+                    counts = connection.execute(
+                        "SELECT count(*) FILTER (WHERE status = 'pending' AND is_current), "
+                        "count(*) FILTER (WHERE status = 'resolved' AND is_current) "
+                        "FROM identity_review_queue"
+                    ).fetchone()
+                with suppress(duckdb.Error):
+                    feature_counts = connection.execute(
+                        """
+                        WITH feature_summary AS (
+                            SELECT
+                                count(*) AS feature_rows,
+                                max(prediction_season) AS max_prediction_season,
+                                count(DISTINCT data_fingerprint) AS fingerprint_count,
+                                count(*) FILTER (
+                                    WHERE data_fingerprint IS NULL
+                                ) AS null_fingerprints,
+                                min(data_fingerprint) AS active_fingerprint
+                            FROM player_season_features
+                            WHERE source = 'nflverse'
+                        )
+                        SELECT
+                            summary.feature_rows,
+                            summary.max_prediction_season,
+                            summary.fingerprint_count,
+                            summary.null_fingerprints,
+                            (
+                                SELECT count(*)
+                                FROM feature_build_metadata AS metadata
+                                WHERE (SELECT count(*) FROM feature_build_metadata) = 1
+                                  AND metadata.data_fingerprint =
+                                      summary.active_fingerprint
+                                  AND metadata.target_data_fingerprint IS NOT NULL
+                                  AND metadata.build_fingerprint IS NOT NULL
+                                  AND metadata.build_fingerprint = sha256(
+                                      '{"feature_data_fingerprint":"'
+                                      || metadata.data_fingerprint
+                                      || '","feature_version":"'
+                                      || metadata.feature_version
+                                      || '","scoring_ruleset_fingerprint":"'
+                                      || metadata.scoring_ruleset_fingerprint
+                                      || '","target_data_fingerprint":"'
+                                      || metadata.target_data_fingerprint
+                                      || '"}'
+                                  )
+                                  AND metadata.feature_rows = summary.feature_rows
+                                  AND metadata.target_rows = (
+                                      SELECT count(*)
+                                      FROM player_season_targets
+                                      WHERE source = 'nflverse'
+                                  )
+                                  AND NOT EXISTS (
+                                      SELECT 1
+                                      FROM player_season_targets AS target
+                                      WHERE target.source = 'nflverse'
+                                        AND (
+                                            target.data_fingerprint IS DISTINCT FROM
+                                                metadata.data_fingerprint
+                                            OR target.target_data_fingerprint
+                                                IS DISTINCT FROM
+                                                metadata.target_data_fingerprint
+                                        )
+                                  )
+                            ) AS valid_metadata_rows
+                        FROM feature_summary AS summary
+                        """
+                    ).fetchone()
+                with suppress(duckdb.Error):
+                    baseline_counts = connection.execute(
+                        """
+                        WITH active_metadata AS (
+                            SELECT metadata.*
+                            FROM feature_build_metadata AS metadata
+                            WHERE (SELECT count(*) FROM feature_build_metadata) = 1
+                              AND metadata.data_fingerprint = (
+                                  SELECT min(data_fingerprint)
+                                  FROM player_season_features
+                                  WHERE source = 'nflverse'
+                              )
+                              AND 1 = (
+                                  SELECT count(DISTINCT data_fingerprint)
+                                  FROM player_season_features
+                                  WHERE source = 'nflverse'
+                              )
+                              AND 0 = (
+                                  SELECT count(*)
+                                  FROM player_season_features
+                                  WHERE source = 'nflverse'
+                                    AND data_fingerprint IS NULL
+                              )
+                        ),
+                        current_predictions AS (
+                            SELECT baseline.*
+                            FROM baseline_predictions AS baseline
+                            JOIN active_metadata AS metadata
+                              ON baseline.build_fingerprint = metadata.build_fingerprint
+                             AND baseline.feature_data_fingerprint =
+                                 metadata.data_fingerprint
+                             AND baseline.target_data_fingerprint =
+                                 metadata.target_data_fingerprint
+                        ),
+                        current_evaluations AS (
+                            SELECT evaluation.*
+                            FROM baseline_evaluation_metadata AS evaluation
+                            JOIN active_metadata AS metadata
+                              ON evaluation.build_fingerprint = metadata.build_fingerprint
+                             AND evaluation.feature_data_fingerprint =
+                                 metadata.data_fingerprint
+                             AND evaluation.target_data_fingerprint =
+                                 metadata.target_data_fingerprint
+                        )
+                        SELECT
+                            (
+                                SELECT count(DISTINCT player_id)
+                                FROM current_predictions
+                                WHERE prediction_season = ?
+                            ),
+                            (SELECT count(*) FROM current_evaluations),
+                            (SELECT count(*) FROM current_predictions),
+                            (SELECT count(*) FROM baseline_predictions),
+                            (SELECT count(*) FROM baseline_evaluation_metadata),
+                            coalesce(
+                                (SELECT max(prediction_rows) FROM current_evaluations), -1
+                            ),
+                            coalesce(
+                                (SELECT max(evaluated_rows) FROM current_evaluations), -1
+                            ),
+                            coalesce(
+                                (
+                                    SELECT max(
+                                        CAST(
+                                            json_extract_string(
+                                                report_payload, '$.evaluated_rows'
+                                            ) AS INTEGER
+                                        )
+                                    )
+                                    FROM current_evaluations
+                                ),
+                                -1
+                            )
+                        """,
+                        [config.project.prediction_season],
+                    ).fetchone()
             if counts is not None:
                 identity_status = f"{int(counts[0])} pending; {int(counts[1])} resolved"
                 identity_available = True
-        except duckdb.CatalogException:
+            if feature_counts is not None and int(feature_counts[0]):
+                feature_status = (
+                    f"{int(feature_counts[0])} rows through prediction season "
+                    f"{int(feature_counts[1])}; {int(feature_counts[2])} active fingerprint"
+                )
+                feature_available = (
+                    int(feature_counts[2]) == 1
+                    and int(feature_counts[3]) == 0
+                    and int(feature_counts[4]) == 1
+                )
+            if (
+                baseline_counts is not None
+                and feature_available
+                and int(baseline_counts[0]) > 0
+                and int(baseline_counts[1]) == 1
+                and int(baseline_counts[2]) > 0
+                and int(baseline_counts[2]) == int(baseline_counts[3])
+                and int(baseline_counts[1]) == int(baseline_counts[4])
+                and int(baseline_counts[2]) == int(baseline_counts[5])
+                and int(baseline_counts[6]) == int(baseline_counts[7])
+            ):
+                baseline_status = (
+                    f"{int(baseline_counts[0])} players projected for "
+                    f"{config.project.prediction_season}; evaluation report available"
+                )
+                baseline_available = True
+        except duckdb.Error:
             pass
 
     return [
@@ -49,13 +225,32 @@ def project_status(config: AppConfig) -> list[StatusItem]:
             str(warehouse) if warehouse.exists() else "not initialized",
             warehouse.exists(),
         ),
-        StatusItem("nflverse raw data", latest_label(nfl_files), bool(nfl_files)),
+        StatusItem(
+            "nflverse player/week data",
+            (
+                f"{latest_label(nfl_player_files)} + {latest_label(nfl_stat_files)}"
+                if nfl_player_files and nfl_stat_files
+                else "not available"
+            ),
+            bool(nfl_player_files and nfl_stat_files),
+        ),
+        StatusItem(
+            "nflverse/PFR snap counts",
+            latest_label(snap_count_files),
+            bool(snap_count_files),
+        ),
         StatusItem("FFC ADP snapshot", latest_label(ffc_files), bool(ffc_files)),
         StatusItem("ESPN ADP", latest_label(espn_files), bool(espn_files)),
         StatusItem("Identity review queue", identity_status, identity_available),
         StatusItem("Scoring and rules engine", "available (configured logic)", True),
+        StatusItem("Player-season features", feature_status, feature_available),
+        StatusItem("Transparent projection baselines", baseline_status, baseline_available),
         StatusItem("Player projection model", "not trained", False),
-        StatusItem("2026 projection board", "not built", False),
+        StatusItem(
+            "Learned 2026 projection board",
+            "not built; transparent baselines are reported separately",
+            False,
+        ),
         StatusItem("ADP movement model", "insufficient dated snapshots", False),
         StatusItem("Historical league outcome model", "insufficient uploaded histories", False),
         StatusItem("Championship probabilities", "disabled", False),

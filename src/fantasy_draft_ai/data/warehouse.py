@@ -12,6 +12,7 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS players (
     player_id VARCHAR PRIMARY KEY,
     gsis_id VARCHAR,
+    pfr_id VARCHAR,
     espn_id VARCHAR,
     sleeper_id VARCHAR,
     yahoo_id VARCHAR,
@@ -24,15 +25,25 @@ CREATE TABLE IF NOT EXISTS players (
     birth_date DATE,
     age DOUBLE,
     experience INTEGER,
+    rookie_season INTEGER,
+    draft_year INTEGER,
+    draft_round INTEGER,
+    draft_pick INTEGER,
+    draft_team VARCHAR,
+    height_inches INTEGER,
+    weight_lbs INTEGER,
     is_active BOOLEAN,
     mapping_confidence VARCHAR NOT NULL,
-    mapping_source VARCHAR NOT NULL
+    mapping_source VARCHAR NOT NULL,
+    identity_source_dataset_id VARCHAR,
+    identity_source_as_of TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS player_week_stats (
     season INTEGER NOT NULL,
     week INTEGER NOT NULL,
     player_id VARCHAR NOT NULL,
+    position VARCHAR,
     season_type VARCHAR,
     game_id VARCHAR,
     nfl_team VARCHAR,
@@ -62,6 +73,30 @@ CREATE TABLE IF NOT EXISTS player_week_stats (
     as_of TIMESTAMPTZ NOT NULL,
     source_dataset_id VARCHAR,
     PRIMARY KEY (season, week, player_id, source)
+);
+
+CREATE TABLE IF NOT EXISTS player_game_participation (
+    season INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    game_id VARCHAR NOT NULL,
+    player_id VARCHAR NOT NULL,
+    pfr_game_id VARCHAR,
+    pfr_player_id VARCHAR NOT NULL,
+    game_type VARCHAR NOT NULL,
+    season_type VARCHAR NOT NULL,
+    position VARCHAR,
+    nfl_team VARCHAR,
+    opponent VARCHAR,
+    offense_snaps DOUBLE NOT NULL,
+    offense_snap_pct DOUBLE,
+    defense_snaps DOUBLE NOT NULL,
+    defense_snap_pct DOUBLE,
+    special_teams_snaps DOUBLE NOT NULL,
+    special_teams_snap_pct DOUBLE,
+    source VARCHAR NOT NULL,
+    as_of TIMESTAMPTZ NOT NULL,
+    source_dataset_id VARCHAR NOT NULL,
+    PRIMARY KEY (game_id, player_id, source)
 );
 
 CREATE TABLE IF NOT EXISTS player_source_mappings (
@@ -112,12 +147,79 @@ CREATE TABLE IF NOT EXISTS player_season_features (
     feature_season INTEGER NOT NULL,
     prediction_season INTEGER NOT NULL,
     cutoff_date DATE NOT NULL,
-    position VARCHAR,
+    feature_available_at DATE,
+    position VARCHAR NOT NULL,
     feature_payload JSON NOT NULL,
     target_payload JSON,
     source VARCHAR NOT NULL,
     is_synthetic BOOLEAN NOT NULL DEFAULT FALSE,
+    feature_version VARCHAR,
+    scoring_ruleset_fingerprint VARCHAR,
+    source_dataset_ids JSON,
+    source_max_stat_season INTEGER,
+    source_max_as_of TIMESTAMPTZ,
+    data_fingerprint VARCHAR,
     PRIMARY KEY (player_id, prediction_season, source)
+);
+
+CREATE TABLE IF NOT EXISTS player_season_targets (
+    player_id VARCHAR NOT NULL,
+    prediction_season INTEGER NOT NULL,
+    position VARCHAR NOT NULL,
+    target_payload JSON NOT NULL,
+    source VARCHAR NOT NULL,
+    is_synthetic BOOLEAN NOT NULL DEFAULT FALSE,
+    target_version VARCHAR NOT NULL,
+    scoring_ruleset_fingerprint VARCHAR NOT NULL,
+    source_dataset_ids JSON NOT NULL,
+    source_max_as_of TIMESTAMPTZ NOT NULL,
+    data_fingerprint VARCHAR NOT NULL,
+    target_data_fingerprint VARCHAR NOT NULL,
+    PRIMARY KEY (player_id, prediction_season)
+);
+
+CREATE TABLE IF NOT EXISTS feature_build_metadata (
+    data_fingerprint VARCHAR PRIMARY KEY,
+    target_data_fingerprint VARCHAR NOT NULL,
+    build_fingerprint VARCHAR NOT NULL,
+    feature_version VARCHAR NOT NULL,
+    scoring_ruleset_fingerprint VARCHAR NOT NULL,
+    start_prediction_season INTEGER NOT NULL,
+    end_prediction_season INTEGER NOT NULL,
+    feature_rows INTEGER NOT NULL,
+    target_rows INTEGER NOT NULL,
+    source_dataset_ids JSON NOT NULL,
+    source_max_as_of TIMESTAMPTZ NOT NULL,
+    quality_payload JSON NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS baseline_predictions (
+    player_id VARCHAR NOT NULL,
+    prediction_season INTEGER NOT NULL,
+    position VARCHAR NOT NULL,
+    target_name VARCHAR NOT NULL,
+    baseline_name VARCHAR NOT NULL,
+    predicted_value DOUBLE NOT NULL,
+    actual_value DOUBLE,
+    experience_group VARCHAR NOT NULL,
+    baseline_version VARCHAR NOT NULL,
+    feature_data_fingerprint VARCHAR NOT NULL,
+    target_data_fingerprint VARCHAR NOT NULL,
+    build_fingerprint VARCHAR NOT NULL,
+    scoring_ruleset_fingerprint VARCHAR NOT NULL,
+    PRIMARY KEY (player_id, prediction_season, target_name, baseline_name)
+);
+
+CREATE TABLE IF NOT EXISTS baseline_evaluation_metadata (
+    report_fingerprint VARCHAR PRIMARY KEY,
+    baseline_version VARCHAR NOT NULL,
+    feature_data_fingerprint VARCHAR NOT NULL,
+    target_data_fingerprint VARCHAR NOT NULL,
+    build_fingerprint VARCHAR NOT NULL,
+    scoring_ruleset_fingerprint VARCHAR NOT NULL,
+    prediction_rows INTEGER NOT NULL,
+    evaluated_rows INTEGER NOT NULL,
+    report_payload JSON NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS adp_snapshots (
@@ -195,6 +297,17 @@ CREATE TABLE IF NOT EXISTS team_outcomes (
 """
 
 MIGRATION_SQL = """
+ALTER TABLE players ADD COLUMN IF NOT EXISTS pfr_id VARCHAR;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS rookie_season INTEGER;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS draft_year INTEGER;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS draft_round INTEGER;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS draft_pick INTEGER;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS draft_team VARCHAR;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS height_inches INTEGER;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS weight_lbs INTEGER;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS identity_source_dataset_id VARCHAR;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS identity_source_as_of TIMESTAMPTZ;
+ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS position VARCHAR;
 ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS season_type VARCHAR;
 ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS game_id VARCHAR;
 ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS source_dataset_id VARCHAR;
@@ -205,6 +318,20 @@ ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS field_goals_made DOUBLE;
 ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS field_goals_attempted DOUBLE;
 ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS extra_points_made DOUBLE;
 ALTER TABLE player_week_stats ADD COLUMN IF NOT EXISTS extra_points_attempted DOUBLE;
+ALTER TABLE player_season_features ADD COLUMN IF NOT EXISTS feature_available_at DATE;
+ALTER TABLE player_season_features ADD COLUMN IF NOT EXISTS feature_version VARCHAR;
+ALTER TABLE player_season_features ADD COLUMN IF NOT EXISTS scoring_ruleset_fingerprint VARCHAR;
+ALTER TABLE player_season_features ADD COLUMN IF NOT EXISTS source_dataset_ids JSON;
+ALTER TABLE player_season_features ADD COLUMN IF NOT EXISTS source_max_stat_season INTEGER;
+ALTER TABLE player_season_features ADD COLUMN IF NOT EXISTS source_max_as_of TIMESTAMPTZ;
+ALTER TABLE player_season_features ADD COLUMN IF NOT EXISTS data_fingerprint VARCHAR;
+ALTER TABLE player_season_targets ADD COLUMN IF NOT EXISTS target_data_fingerprint VARCHAR;
+ALTER TABLE feature_build_metadata ADD COLUMN IF NOT EXISTS target_data_fingerprint VARCHAR;
+ALTER TABLE feature_build_metadata ADD COLUMN IF NOT EXISTS build_fingerprint VARCHAR;
+ALTER TABLE baseline_predictions ADD COLUMN IF NOT EXISTS target_data_fingerprint VARCHAR;
+ALTER TABLE baseline_predictions ADD COLUMN IF NOT EXISTS build_fingerprint VARCHAR;
+ALTER TABLE baseline_evaluation_metadata ADD COLUMN IF NOT EXISTS target_data_fingerprint VARCHAR;
+ALTER TABLE baseline_evaluation_metadata ADD COLUMN IF NOT EXISTS build_fingerprint VARCHAR;
 """
 
 
@@ -228,6 +355,7 @@ class Warehouse:
         with self.connect() as connection:
             connection.execute(SCHEMA_SQL)
             connection.execute(MIGRATION_SQL)
+            _ensure_feature_key_uniqueness(connection)
 
     def table_counts(self) -> dict[str, int]:
         """Return row counts for every canonical table."""
@@ -235,9 +363,14 @@ class Warehouse:
         tables = [
             "players",
             "player_week_stats",
+            "player_game_participation",
             "player_source_mappings",
             "identity_review_queue",
             "player_season_features",
+            "player_season_targets",
+            "feature_build_metadata",
+            "baseline_predictions",
+            "baseline_evaluation_metadata",
             "adp_snapshots",
             "league_rules",
             "draft_picks",
@@ -254,3 +387,28 @@ class Warehouse:
                     raise RuntimeError(f"DuckDB did not return a count for {table}.")
                 counts[table] = int(row[0])
             return counts
+
+
+def _ensure_feature_key_uniqueness(
+    connection: duckdb.DuckDBPyConnection,
+) -> None:
+    duplicate = connection.execute(
+        """
+        SELECT count(*)
+        FROM (
+            SELECT player_id, prediction_season
+            FROM player_season_features
+            GROUP BY player_id, prediction_season
+            HAVING count(*) > 1
+        )
+        """
+    ).fetchone()
+    if duplicate is None or int(duplicate[0]):
+        raise RuntimeError(
+            "Cannot migrate player_season_features: duplicate player/prediction-season "
+            "keys exist across legacy sources. Resolve them before initializing Phase 3."
+        )
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_player_season_features_logical "
+        "ON player_season_features (player_id, prediction_season)"
+    )
