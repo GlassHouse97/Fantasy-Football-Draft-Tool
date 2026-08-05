@@ -1,7 +1,7 @@
 targets:
   - fantasy_points_per_game
-  - games_played
-  - total_fantasy_points
+  - games_active
+  - fantasy_points_total
 positions: [QB, RB, WR, TE]
 prediction_season: 2026
 last_completed_season: 2025

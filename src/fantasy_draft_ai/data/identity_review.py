@@ -257,8 +257,7 @@ def refresh_identity_review_queue(
         )
     pending = sum(row["status"] == IdentityReviewStatus.PENDING for row in rows)
     unresolved = sum(
-        row["status"] == IdentityReviewStatus.PENDING
-        and row["candidate_player_id"] is None
+        row["status"] == IdentityReviewStatus.PENDING and row["candidate_player_id"] is None
         for row in rows
     )
     excluded = sum(row["status"] == IdentityReviewStatus.EXCLUDED for row in rows)
@@ -620,7 +619,7 @@ def _build_review_rows(
         if observation.excluded:
             status = IdentityReviewStatus.EXCLUDED
             reason = "unsupported_team_defense"
-        elif (mapped_id := mappings.get((observation.source, observation.source_player_id))):
+        elif mapped_id := mappings.get((observation.source, observation.source_player_id)):
             candidate = players_by_id.get(mapped_id)
             confidence = MappingConfidence.REVIEWED
             status = IdentityReviewStatus.RESOLVED
@@ -635,9 +634,7 @@ def _build_review_rows(
             status = IdentityReviewStatus.RESOLVED
             reason = "exact_platform_id"
         else:
-            candidate, confidence, reason = _name_candidate(
-                observation, strict_names, suffix_names
-            )
+            candidate, confidence, reason = _name_candidate(observation, strict_names, suffix_names)
 
         rows.append(
             {
@@ -970,9 +967,7 @@ def apply_identity_overrides(config: AppConfig, source_path: Path) -> IdentityOv
     )
 
 
-def _validate_override_targets(
-    warehouse: Warehouse, decided: pd.DataFrame
-) -> list[QualityIssue]:
+def _validate_override_targets(warehouse: Warehouse, decided: pd.DataFrame) -> list[QualityIssue]:
     issues: list[QualityIssue] = []
     with warehouse.connect(read_only=True) as connection:
         queue_rows = connection.execute(
@@ -1188,10 +1183,7 @@ def _commit_overrides(
             for _, row in decided.iterrows():
                 review_id = str(row["review_id"])
                 queued = queue_rows[review_id]
-                if (
-                    not bool(queued[10])
-                    or str(queued[3]) == IdentityReviewStatus.EXCLUDED.value
-                ):
+                if not bool(queued[10]) or str(queued[3]) == IdentityReviewStatus.EXCLUDED.value:
                     raise RuntimeError(
                         f"Review {review_id} is stale or excluded and cannot be resolved."
                     )

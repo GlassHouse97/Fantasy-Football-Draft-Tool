@@ -17,6 +17,7 @@ PLAYER_REQUIRED_COLUMNS = frozenset(
     {
         "gsis_id",
         "display_name",
+        "pfr_id",
         "espn_id",
         "birth_date",
         "position",
@@ -24,6 +25,13 @@ PLAYER_REQUIRED_COLUMNS = frozenset(
         "status",
         "last_season",
         "years_of_experience",
+        "rookie_season",
+        "draft_year",
+        "draft_round",
+        "draft_pick",
+        "draft_team",
+        "height",
+        "weight",
     }
 )
 
@@ -703,6 +711,8 @@ def _create_normalized_tables(
             prediction_season,
             manifest.dataset_id,
             manifest.dataset_id,
+            manifest.dataset_id,
+            manifest.acquired_at,
             str(player_path),
         ],
     )
@@ -724,6 +734,7 @@ WITH conflict_ids AS (
 SELECT
     p.gsis_id AS player_id,
     p.gsis_id,
+    nullif(trim(p.pfr_id), '') AS pfr_id,
     nullif(trim(p.espn_id), '') AS espn_id,
     NULL::VARCHAR AS sleeper_id,
     NULL::VARCHAR AS yahoo_id,
@@ -736,6 +747,13 @@ SELECT
     try_cast(p.birth_date AS DATE) AS birth_date,
     NULL::DOUBLE AS age,
     p.years_of_experience AS experience,
+    p.rookie_season,
+    p.draft_year,
+    p.draft_round,
+    p.draft_pick,
+    upper(nullif(trim(p.draft_team), '')) AS draft_team,
+    p.height AS height_inches,
+    p.weight AS weight_lbs,
     CASE
         WHEN p.last_season < ? THEN FALSE
         WHEN p.status = 'ACT' THEN TRUE
@@ -746,7 +764,9 @@ SELECT
     CASE
         WHEN c.player_id IS NULL THEN 'nflverse:gsis_id:' || ?
         ELSE 'nflverse:gsis_id_with_name_conflict:' || ?
-    END AS mapping_source
+    END AS mapping_source,
+    ?::VARCHAR AS identity_source_dataset_id,
+    ?::TIMESTAMPTZ AS identity_source_as_of
 FROM read_parquet(?) p
 LEFT JOIN conflict_ids c ON p.gsis_id = c.player_id
 WHERE p.gsis_id IS NOT NULL AND trim(p.gsis_id) <> ''
@@ -758,6 +778,7 @@ SELECT
     season,
     week,
     player_id,
+    upper(nullif(trim(position), '')) AS position,
     upper(nullif(trim(season_type), '')) AS season_type,
     nullif(trim(game_id), '') AS game_id,
     upper(nullif(trim(team), '')) AS nfl_team,
@@ -800,6 +821,7 @@ USING normalized_players AS source
 ON target.player_id = source.player_id
 WHEN MATCHED THEN UPDATE SET
     gsis_id = source.gsis_id,
+    pfr_id = coalesce(target.pfr_id, source.pfr_id),
     espn_id = coalesce(target.espn_id, source.espn_id),
     sleeper_id = coalesce(target.sleeper_id, source.sleeper_id),
     yahoo_id = coalesce(target.yahoo_id, source.yahoo_id),
@@ -812,6 +834,13 @@ WHEN MATCHED THEN UPDATE SET
     birth_date = source.birth_date,
     age = source.age,
     experience = source.experience,
+    rookie_season = source.rookie_season,
+    draft_year = source.draft_year,
+    draft_round = source.draft_round,
+    draft_pick = source.draft_pick,
+    draft_team = source.draft_team,
+    height_inches = source.height_inches,
+    weight_lbs = source.weight_lbs,
     is_active = source.is_active,
     mapping_confidence = CASE
         WHEN target.mapping_source NOT LIKE 'nflverse:%' THEN target.mapping_confidence
@@ -820,17 +849,24 @@ WHEN MATCHED THEN UPDATE SET
     mapping_source = CASE
         WHEN target.mapping_source NOT LIKE 'nflverse:%' THEN target.mapping_source
         ELSE source.mapping_source
-    END
+    END,
+    identity_source_dataset_id = source.identity_source_dataset_id,
+    identity_source_as_of = source.identity_source_as_of
 WHEN NOT MATCHED THEN INSERT (
-    player_id, gsis_id, espn_id, sleeper_id, yahoo_id, mfl_id, fleaflicker_id,
+    player_id, gsis_id, pfr_id, espn_id, sleeper_id, yahoo_id, mfl_id, fleaflicker_id,
     fantasypros_id, display_name, canonical_position, nfl_team, birth_date, age,
-    experience, is_active, mapping_confidence, mapping_source
+    experience, rookie_season, draft_year, draft_round, draft_pick, draft_team,
+    height_inches, weight_lbs, is_active, mapping_confidence, mapping_source,
+    identity_source_dataset_id, identity_source_as_of
 ) VALUES (
-    source.player_id, source.gsis_id, source.espn_id, source.sleeper_id,
+    source.player_id, source.gsis_id, source.pfr_id, source.espn_id, source.sleeper_id,
     source.yahoo_id, source.mfl_id, source.fleaflicker_id, source.fantasypros_id,
     source.display_name, source.canonical_position, source.nfl_team,
-    source.birth_date, source.age, source.experience, source.is_active,
-    source.mapping_confidence, source.mapping_source
+    source.birth_date, source.age, source.experience, source.rookie_season,
+    source.draft_year, source.draft_round, source.draft_pick, source.draft_team,
+    source.height_inches, source.weight_lbs, source.is_active,
+    source.mapping_confidence, source.mapping_source, source.identity_source_dataset_id,
+    source.identity_source_as_of
 )
 """
 
@@ -867,6 +903,7 @@ ON target.season = source.season
    AND target.player_id = source.player_id
    AND target.source = source.source
 WHEN MATCHED THEN UPDATE SET
+    position = source.position,
     season_type = source.season_type,
     game_id = source.game_id,
     nfl_team = source.nfl_team,
@@ -895,7 +932,7 @@ WHEN MATCHED THEN UPDATE SET
     as_of = source.as_of,
     source_dataset_id = source.source_dataset_id
 WHEN NOT MATCHED THEN INSERT (
-    season, week, player_id, season_type, game_id, nfl_team, opponent,
+    season, week, player_id, position, season_type, game_id, nfl_team, opponent,
     completions, passing_attempts, passing_yards, passing_tds, interceptions,
     rushing_yards, rushing_tds, receiving_yards, receptions, receiving_tds,
     targets, carries, two_point_conversions, fumbles_lost, special_teams_tds,
@@ -903,7 +940,7 @@ WHEN NOT MATCHED THEN INSERT (
     extra_points_attempted, games_active, games_played, source, as_of,
     source_dataset_id
 ) VALUES (
-    source.season, source.week, source.player_id, source.season_type,
+    source.season, source.week, source.player_id, source.position, source.season_type,
     source.game_id, source.nfl_team, source.opponent, source.completions,
     source.passing_attempts, source.passing_yards, source.passing_tds,
     source.interceptions, source.rushing_yards, source.rushing_tds,

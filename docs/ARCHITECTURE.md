@@ -46,6 +46,14 @@ The player dimension uses GSIS IDs as internal IDs and never joins on display na
 
 The nflverse player capture is a current global identity snapshot, not a table limited to the requested stat seasons. Historical feature code must use weekly team context and explicit cutoffs rather than treating current identity attributes as historical facts.
 
+## Participation and historical player context
+
+`fantasy-draft data download-nflverse-snap-counts` uses `nflreadpy.load_snap_counts` to archive Pro Football Reference game-level snap counts distributed by nflverse. The raw Parquet file is immutable and paired with a SHA-256 manifest. `fantasy-draft data load-nflverse-participation` verifies that capture, maps PFR IDs through canonical `players.pfr_id`, validates logical keys and season coverage, and atomically replaces nflverse participation rows in the manifest's complete season scope. Other seasons and sources survive; a repeat load of the same manifest produces the same rows.
+
+Participation is evidence-based: a player has an active game only when offense, defense, or special-teams snaps sum to more than zero. A roster label or zero-snap record does not count. If a nonzero-stat/opportunity game lacks that evidence, the entire affected player-season denominator and points per game are left null instead of using a partial denominator. Postseason snap rows remain auditable but are excluded from season features.
+
+The weekly-stat loader persists the position reported in each historical weekly row. Feature construction prefers weekly position and then participation position; historical team context also comes from time-indexed records. Static identity position is a fallback only when `identity_source_as_of` is on or before the row's September 1 cutoff. The August 2026 snapshot therefore supports live 2026 rows, but it is not backfilled into historical entry cohorts. Static facts used for age, rookie, draft-capital, and height features retain `identity_source_dataset_id` and acquisition time. Current weight, team, experience, and active status are never treated as historical features.
+
 ## Player identity review and overrides
 
 `fantasy-draft data review-identities` reads the latest verified nflverse, FFC, and manual ESPN captures and compares their source identities with canonical `players`. Each logical observation receives a deterministic `review_id` based on its issue type, source, and source player ID. Refreshing the same evidence updates that queue record instead of manufacturing another review. Records that disappear from the latest source evidence remain available for audit with `is_current = false`.
@@ -60,7 +68,23 @@ Stable source IDs are authoritative evidence when they already agree with the ca
 
 `fantasy-draft data apply-identity-overrides PATH` accepts only decisions tied to an existing review ID. It validates source evidence, canonical targets, timestamps, reviewers, collisions, and resolution rules before archiving the submitted CSV unchanged. Approved decisions update the queue, mapping registry, and relevant canonical identity fields in one DuckDB transaction. Any failure rolls back the entire operation. Identical decisions are matched as no-ops, conflicting final decisions are rejected, and a stable nflverse GSIS ID cannot be remapped by name. The nflverse loader reapplies reviewed identity evidence after source refreshes so a later load cannot silently erase a human decision.
 
-Phase 2 ends at this validated identity boundary. Phase 3 may build cutoff-safe player-season features, but model training remains disabled until feature row accounting, regular-season semantics, provenance, and leakage tests pass.
+Phase 2 ends at this validated identity boundary.
+
+## Phase 3 player-season features and baselines
+
+Phase 3 is complete. A feature row with feature season `t` predicts season `t+1` and uses regular-season information only through `t`. September 1 of the prediction season is the logical preseason cutoff recorded in `cutoff_date` and `feature_available_at`. The later 2026 archive acquisition timestamp is retained in `source_max_as_of` as reproducibility evidence; it is not claimed to be the historical cutoff.
+
+Feature construction separates predictors and outcomes physically:
+
+- `player_season_features` contains lagged and weighted history, component rates, age/draft/rookie context, position priors, and explicit missingness flags;
+- `player_season_targets` contains next-season points per active game, active games, and total points;
+- `feature_build_metadata` binds row counts, ruleset fingerprint, source dataset IDs, validation report, a feature-only fingerprint, a target-only fingerprint, and their combined build fingerprint.
+
+The builder stages and atomically replaces the active logical set, enforces one row per player/prediction season, excludes synthetic rows by default, and validates cutoffs, targets, provenance, duplicates, candidate coverage, position availability, and participation coverage before commit. The cutoff-safe candidate proxy uses evidence from the prior four seasons plus current and prior rookie cohorts; three seasons feed weighted production, and all four years of selection evidence remain in lineage. The validated build contains 11,171 features and 9,804 historical targets, including 1,367 live 2026 rows. It reports 2,710 current-core historical entry-cohort candidates excluded for missing cutoff-safe position evidence and 309 rows that use a cutoff-safe identity-snapshot fallback. Because the project does not yet archive historical preseason positions, historical rookie baseline performance is deliberately not claimed. A changed combined build fingerprint invalidates dependent baseline outputs.
+
+Five transparent baselines—previous season, weighted history, age/position adjusted, position shrinkage, and weighted components—are evaluated on expanding folds for 2020-2025. They produced 167,565 prediction rows and 80,060 evaluated rows from 6,464 evaluation candidates (3,102 positive-game, 3,344 zero-game, and 18 with unavailable games-active outcomes). The age/position-adjusted baseline achieved the best aggregate points-per-game MAE of 2.581 and total-points MAE of 33.324. No cutoff-safe historical ADP snapshots exist, so the current 2026 ADP snapshot is explicitly unavailable as a historical comparison.
+
+These are deterministic heuristics, not a trained statistical or ML player model. Phase 4 begins model training and must compare every candidate against this frozen chronological baseline. See [the Phase 3 evaluation report](PHASE_3_BASELINE_EVALUATION.md) and [learning chapter](learning/03_baselines_and_why_they_matter.md).
 
 ## Interfaces chosen in Phase 0
 
