@@ -83,7 +83,7 @@ Those counts are necessary, not sufficient. A later authorized modeling phase wo
 
 The current production warehouse has been migrated additively and the CLI data audit passes across eight manifests and 12 verified raw files. The focused Phase 8 integration suite covers unsafe ZIPs, privacy rejection, immutable archives, equivalent-package deduplication, canonical conflicts, identity review/reconciliation, additive migrations, partial-week fail-closed behavior, app pages, and model-gate locks. Final repository-wide and browser evidence is recorded in [the Phase 8 evaluation](PHASE_8_LEAGUE_HISTORY_EVALUATION.md).
 
-GitHub Actions hosted evidence for Phases 6 and 7 is still pending due the reported Actions outage. The existing hourly reminder tracks the canceled Phase 6 run and missing Phase 7 run and will report only real hosted results. Phase 8 should be committed, pushed, and opened as a PR after local gates; merging should wait for green hosted CI unless the outage persists and an explicit, documented decision is made.
+GitHub Actions hosted evidence for Phases 6 and 7 is still pending due the reported Actions outage. Phase 8 commit `d593fe4` is pushed on `codex/phase-8-league-history`, and draft PR #8 is open against `main`. No Phase 8 workflow registered while GitHub Status reported an Actions major outage. The recovery reminder should track all three milestones and report only real hosted results. PR #8 remains unmerged until green hosted CI exists unless the outage persists and a separate explicit, documented decision is made.
 
 ## After Phase 8
 

@@ -4,7 +4,7 @@ Implementation status: **PASSED**
 
 Local publication gate: **PASSED**
 
-Hosted CI: **PENDING — NOT GREEN**
+Hosted CI: **PENDING — PR #8 OPEN AS DRAFT; NO WORKFLOW REGISTERED**
 
 ## Validated framework
 
@@ -82,6 +82,8 @@ The final local publication evidence is:
 - real browser QA: **passed** for the new navigation, League History empty state, exact 0/14 locked gate, absence of training controls, Data Center history template/ZIP controls, privacy warning, and live passed audit.
 
 Local evidence is not presented as hosted GitHub Actions success.
+
+Phase 8 commit `d593fe4` is pushed on `codex/phase-8-league-history`, and draft PR #8 targets `main`. At the publication check, GitHub Status reported an Actions major outage and the PR had no registered workflow. The PR remains unmerged until a hosted runner executes the quality gates successfully or a separate explicit outage decision is documented.
 
 ## Human handoff
 

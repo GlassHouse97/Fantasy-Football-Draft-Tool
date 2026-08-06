@@ -8,7 +8,7 @@
   },
   "hosted_ci": {
     "phase_6_and_7_recovery": "pending_actions_outage_retry_not_green",
-    "phase_8": "not_yet_published"
+    "phase_8": "draft_pr_8_open_no_workflow_registered_actions_major_outage"
   },
   "implementation_status": "PASSED",
   "phase": 8,

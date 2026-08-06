@@ -176,7 +176,8 @@
 - [x] Expose no playoff/championship training control and produce no outcome probability.
 - [x] Add a copy-paste human-testing guide and manual historical-data walkthrough.
 - [x] Record final repository-wide local gates, data audit, AppTest/browser QA, and Phase 8 evaluation evidence.
-- [ ] Publish the Phase 8 branch and PR; merge only with truthful hosted-CI evidence or an explicit outage decision.
+- [x] Publish Phase 8 commit `d593fe4` on `codex/phase-8-league-history` and open draft PR #8.
+- [ ] Merge PR #8 only with truthful hosted-CI evidence or an explicit outage decision.
 
 ## Publication and operator follow-up
 
