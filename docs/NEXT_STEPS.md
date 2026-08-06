@@ -2,32 +2,45 @@
 
 ## Current milestone
 
-Phases 0 through 7 are implemented locally. Phase 7 turns the validated data, model, market, and draft-engine contracts into a seven-route Streamlit application:
+Phases 0 through 8 from the master specification are implemented locally. Phase 8 is the final planned phase, not the start of automatic championship modeling. It adds the safe league-history framework, descriptive reports, and the written evidence gate that prevents outcome training without enough real data.
+
+The local app now has eight workspaces:
 
 | Route | Current status |
 |---|---|
-| `/status` | Ready; shows build facts, capability status, blocker, and next action. |
-| `/data-center` | Ready; archives allowlisted sources immutably and reports manifests, canonical tables, and audit quality. |
-| `/model-lab` | Ready and read-only; it has no training or publication button. |
-| `/league-setup` | Ready; persists normalized rules/draft slot and supports fingerprint-checked YAML backup/restore. |
-| `/draft-room` | Manual state ready; live recommendation and simulation remain mapping-gated. |
+| `/status` | Ready; reports actual capability, evidence, blockers, and next actions. |
+| `/data-center` | Ready; inventories data, runs the audit, downloads the history template, and archive-first imports validated history ZIPs. |
+| `/league-history` | Ready; currently shows the truthful empty state because no personal history has been imported. |
+| `/model-lab` | Ready and read-only; player-model training/publication remains a deliberate CLI workflow. |
+| `/league-setup` | Ready; saves exact rules and supports fingerprint-checked YAML backup/restore. |
+| `/draft-room` | Manual state ready; recommendation/simulation remains ADP-identity-gated. |
 | `/post-draft` | Ready for complete or incomplete persisted sessions with explicit limitations. |
-| `/learning-center` | Ready; previews guide and notebook Markdown without executing code. |
+| `/learning-center` | Ready; previews local guides and notebook Markdown without executing code. |
 
-Start the app from the repository root:
+Start the app from `PS C:\Users\Chris D>`:
 
 ```powershell
+cd "C:\Users\Chris D\OneDrive - Musco Food Corporation\Desktop\Portfolio Data\Fantasy Football AI"
 .\.venv\Scripts\Activate.ps1
 fantasy-draft app
 ```
 
-The local app does not weaken prior quality boundaries. Data Center acquisition creates new timestamped raw files and SHA-256 manifests; canonical nflverse, participation, and ADP loads remain deliberate CLI handoffs. Model Lab reads only the validated publication. Draft Room persists through DuckDB and event replay, not browser state. Post-Draft reports use the session's frozen rules/player pool and never invent missing market evidence or uncertainty.
+Use [the Human Testing Guide](HUMAN_TESTING_GUIDE.md) for the first click-through. Record confusing labels, unexpected behavior, unavailable-feature explanations, and the exact action/error when something fails. That usability pass is the safest next iteration after Phase 8.
 
-## Operator action required for live recommendations
+## What is already usable without personal history
 
-Manual drafting is usable now with 1,367 canonical projection rows. Live recommendation and Monte Carlo actions remain correctly locked because 0 of 203 draftable PPR/12-team QB/RB/WR/TE ADP rows have reviewed canonical mappings. The 43 archived PK/DEF rows remain auditable outside this ruleset's projection and roster coverage. Display names are never used as fallback joins.
+You do not need a personal league-history package to open the app, inspect player models, save league rules, create a draft session, or manually record picks. The session is persisted in DuckDB and verified through event replay, so a browser refresh does not erase the draft.
 
-Refresh and review the identity worksheet, then rebuild the market publication:
+The current public-data foundation remains intact:
+
+- 25,037 canonical players and 199,629 weekly-stat rows;
+- 11,171 cutoff-safe player-season features and 9,804 historical targets;
+- one validated Phase 4 run with 24 registered routes and a 1,367-player 2026 board; and
+- 246 production ADP observations with transparent persistence/availability baselines.
+
+Live recommendation and Monte Carlo actions are still correctly locked because 0 of 203 compatible QB/RB/WR/TE ADP rows have reviewed canonical mappings. The 43 archived PK/DEF rows remain outside this ruleset's recommendation coverage. Manual drafting is a separate capability and remains usable.
+
+To unlock reviewed market linkage, carefully complete the existing identity workflow and rebuild Phase 5 before creating a new frozen session:
 
 ```powershell
 fantasy-draft data review-identities
@@ -39,65 +52,46 @@ fantasy-draft data audit
 fantasy-draft status
 ```
 
-Only apply a worksheet after checking every decision, reviewer, timestamp, and required note. The override command validates the complete file before writing and archives it with immutable provenance. After the rebuilt Phase 5 status is ready, create a new draft session; existing state-only sessions intentionally retain their original frozen unresolved pool.
+Do not apply the generated worksheet without checking every decision, canonical player ID, reviewer, timestamp, and required note.
 
-Continue capturing independent dated production ADP snapshots during draft season. Persistence is active, but linear and exponentially weighted movement methods need at least three dated observations per source player. Real linked draft outcomes are still required before availability calibration can be evaluated.
+## Optional personal-history workflow
 
-## Verified Phase 7 quality evidence
+Production currently contains 0 league-history packages, league-seasons, team outcomes, roster-construction rows, and drafted-only metrics. No real personal data is committed to the repository.
 
-Phase 7's local publication gates are complete:
+Start with one complete historical season to learn the workflow:
 
-- Ruff passed.
-- Strict mypy passed across 87 source files.
-- All 38 focused service, repository, and UI tests passed during incremental validation.
-- The final repository-wide pytest run passed 251 tests in 127.81 seconds.
-- Streamlit AppTest loaded the default entry point and all seven pages with zero exceptions.
-- The CLI data audit passed across eight manifests and 12 verified immutable raw files.
-- Real browser QA navigated the local multipage app and successfully ran the live Data Center audit action.
+1. Download the `league-history-v1` template in Data Center.
+2. Move the working copy outside the repository and preferably outside OneDrive.
+3. Replace league, team, owner, username, and account identifiers with stable pseudonymous IDs.
+4. Fill every league rule, every original draft pick, and every team outcome for that season.
+5. Put `package.json` and the declared CSV files directly at the ZIP root.
+6. Import the ZIP in Data Center and read/download its quality report.
+7. Run `fantasy-draft data review-identities`; approve only verified public football-player IDs.
+8. Apply reviewed decisions, refresh the queue, and run `fantasy-draft features build-roster-history`.
+9. Run `fantasy-draft data audit` and inspect `/league-history`.
+10. Repeat for all accessible completed seasons without selecting only your team, champions, or memorable drafts.
 
-To reproduce the final local gates:
+The full field walkthrough is in [League History Import Guide](LEAGUE_HISTORY_IMPORT_GUIDE.md) and the collection checklist is in [User Data Checklist](USER_DATA_CHECKLIST.md).
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\test.ps1
-fantasy-draft data audit
-```
+## Why outcome training remains locked
 
-The complete evidence is recorded in [the Phase 7 evaluation](PHASE_7_STREAMLIT_EVALUATION.md).
+One personal league can be useful for descriptive learning but is not independent representative evidence for a calibrated playoff/championship model. Phase 8 requires, at minimum, 100 analysis-ready league-seasons, 1,000 team-seasons with roster features and target evidence, five seasons, chronological validation/test coverage, 95% completeness/mapping, and balanced target classes. A nonlinear model has a higher floor.
 
-## Phase 6 and Phase 7 hosted-CI retry
+Those counts are necessary, not sufficient. A later authorized modeling phase would still need leakage review, representative sampling, ruleset diversity, chronological baseline comparison, calibration, and cohort reliability. Phase 8 has no outcome-training button and produces no playoff/championship probability.
 
-Phase 6 PR #6 is merged, but its GitHub Actions evidence is not marked green. GitHub's runner outage canceled the pull-request and `main` workflows before any runner was assigned; `main` run `31119062454` completed zero steps with `runner_id=0`. GitHub Actions was still reporting a major outage when Phase 7 PR #7 opened on August 6, 2026, and no Actions workflow run registered for that branch. An hourly reminder is active to:
+## Quality and publication boundary
 
-1. check GitHub's Actions service status;
-2. rerun the failed/canceled Phase 6 `main` workflow only after runners are accepting jobs;
-3. locate or safely retrigger the missing Phase 7 workflow if GitHub does not enqueue it automatically;
-4. watch both workflows to completion;
-5. report the real results and disable the reminder only after both are green; and
-6. inspect an actual code failure before changing code if either workflow reaches a runner but fails.
+The current production warehouse has been migrated additively and the CLI data audit passes across eight manifests and 12 verified raw files. The focused Phase 8 integration suite covers unsafe ZIPs, privacy rejection, immutable archives, equivalent-package deduplication, canonical conflicts, identity review/reconciliation, additive migrations, partial-week fail-closed behavior, app pages, and model-gate locks. Final repository-wide and browser evidence is recorded in [the Phase 8 evaluation](PHASE_8_LEAGUE_HISTORY_EVALUATION.md).
 
-The passing local Phase 6 and Phase 7 gates remain useful evidence, but they are not a substitute for completed hosted workflows.
+GitHub Actions hosted evidence for Phases 6 and 7 is still pending due the reported Actions outage. The existing hourly reminder tracks the canceled Phase 6 run and missing Phase 7 run and will report only real hosted results. Phase 8 should be committed, pushed, and opened as a PR after local gates; merging should wait for green hosted CI unless the outage persists and an explicit, documented decision is made.
 
-## Phase 8 gate
+## After Phase 8
 
-Do not train league-outcome or championship models next. Sleeper import and league-history parsing/normalization are still unavailable. Phase 7 can only quarantine-archive a pseudonymized CSV, JSON, or ZIP package without inspecting or consuming it, so the repository still lacks validated linked histories for those claims.
+There is no Phase 9 in the current master specification. The next work should be driven by evidence from:
 
-The next development phase should begin with a versioned, privacy-safe league-history import contract and descriptive analysis only:
+- your human usability test;
+- reviewed ADP identity mappings and live draft rehearsals;
+- the first real pseudonymized history package and its quality report; and
+- genuine data gaps uncovered by those workflows.
 
-1. define a pseudonymized history package and validation report;
-2. implement immutable archive and idempotent normalization;
-3. add descriptive league/draft summaries without causal or probability claims;
-4. measure seasons, teams, outcome completeness, and class balance; and
-5. permit outcome modeling only if a written data-sufficiency gate passes.
-
-Championship probability remains disabled throughout Phase 7 and until that future gate is genuinely satisfied.
-
-## Frozen upstream contracts
-
-Keep these validated publications unchanged unless their own phase is intentionally rebuilt:
-
-- Phase 3: 11,171 cutoff-safe features, 9,804 historical targets, and 1,367 live 2026 rows. See [the Phase 3 evaluation](PHASE_3_BASELINE_EVALUATION.md).
-- Phase 4: active run `phase4-7ae8e9aed04bffca00c0`, 24 registered models, 12 champion routes, and a complete 1,367-row projection board. See [the Phase 4 evaluation](PHASE_4_MODEL_EVALUATION.md).
-- Phase 5: 246 production observations, 246 movement features, 738 baseline forecasts, and 246 availability parameter rows. See [the Phase 5 evaluation](PHASE_5_ADP_AVAILABILITY_EVALUATION.md).
-- Phase 6: event-sourced state, exact lineup assignment, frozen pools, seeded simulation fixtures, and transparent recommendation roles. See [the Phase 6 evaluation](PHASE_6_DRAFT_ENGINE_EVALUATION.md).
-
-No Phase 7 page retrains, silently reloads, or relabels those upstream contracts.
+Likely follow-up work is usability polish, platform-specific documented import helpers, additional historical evidence coverage, and bug fixes. It is not automatic expansion into outcome modeling.

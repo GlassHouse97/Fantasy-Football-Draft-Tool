@@ -495,6 +495,7 @@ CREATE TABLE IF NOT EXISTS league_rules (
     season INTEGER NOT NULL,
     team_count INTEGER NOT NULL,
     user_draft_slot INTEGER,
+    draft_date TIMESTAMPTZ,
     draft_type VARCHAR NOT NULL,
     rounds INTEGER NOT NULL,
     starter_slots_json JSON NOT NULL,
@@ -504,7 +505,10 @@ CREATE TABLE IF NOT EXISTS league_rules (
     scoring_json JSON NOT NULL,
     playoff_settings_json JSON,
     normalized_ruleset_json JSON NOT NULL,
-    ruleset_fingerprint VARCHAR NOT NULL
+    ruleset_fingerprint VARCHAR NOT NULL,
+    source_dataset_id VARCHAR,
+    row_fingerprint VARCHAR,
+    loaded_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS draft_picks (
@@ -515,10 +519,17 @@ CREATE TABLE IF NOT EXISTS draft_picks (
     team_id VARCHAR NOT NULL,
     player_id VARCHAR,
     player_name VARCHAR,
+    position VARCHAR,
+    source_platform VARCHAR,
+    source_player_id VARCHAR,
+    mapping_confidence VARCHAR,
     is_keeper BOOLEAN,
     is_autopick BOOLEAN,
     picked_at TIMESTAMPTZ,
     adp_snapshot_id VARCHAR,
+    source_dataset_id VARCHAR,
+    row_fingerprint VARCHAR,
+    loaded_at TIMESTAMPTZ,
     PRIMARY KEY (league_season_id, overall_pick)
 );
 
@@ -614,7 +625,74 @@ CREATE TABLE IF NOT EXISTS team_outcomes (
     final_place INTEGER,
     is_champion BOOLEAN,
     draft_only_metrics JSON,
+    source_dataset_id VARCHAR,
+    row_fingerprint VARCHAR,
+    loaded_at TIMESTAMPTZ,
     PRIMARY KEY (league_season_id, team_id)
+);
+
+CREATE TABLE IF NOT EXISTS league_history_imports (
+    package_fingerprint VARCHAR PRIMARY KEY,
+    schema_version VARCHAR NOT NULL,
+    manifest_dataset_id VARCHAR NOT NULL,
+    raw_path VARCHAR NOT NULL,
+    raw_sha256 VARCHAR NOT NULL,
+    normalized_fingerprint VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    league_count INTEGER NOT NULL,
+    rules_rows INTEGER NOT NULL,
+    pick_rows INTEGER NOT NULL,
+    outcome_rows INTEGER NOT NULL,
+    unresolved_player_rows INTEGER NOT NULL,
+    quality_report JSON NOT NULL,
+    imported_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS league_history_leagues (
+    league_season_id VARCHAR PRIMARY KEY,
+    package_fingerprint VARCHAR NOT NULL,
+    season INTEGER NOT NULL,
+    team_count INTEGER NOT NULL,
+    ruleset_fingerprint VARCHAR NOT NULL,
+    expected_pick_rows INTEGER NOT NULL,
+    actual_pick_rows INTEGER NOT NULL,
+    outcome_rows INTEGER NOT NULL,
+    resolved_pick_rows INTEGER NOT NULL,
+    draft_complete BOOLEAN NOT NULL,
+    outcomes_complete BOOLEAN NOT NULL,
+    analysis_ready BOOLEAN NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS roster_construction_features (
+    league_season_id VARCHAR NOT NULL,
+    team_id VARCHAR NOT NULL,
+    feature_version VARCHAR NOT NULL,
+    package_fingerprint VARCHAR NOT NULL,
+    ruleset_fingerprint VARCHAR NOT NULL,
+    feature_payload JSON NOT NULL,
+    built_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (league_season_id, team_id, feature_version)
+);
+
+CREATE TABLE IF NOT EXISTS draft_only_team_metrics (
+    league_season_id VARCHAR NOT NULL,
+    team_id VARCHAR NOT NULL,
+    metric_version VARCHAR NOT NULL,
+    package_fingerprint VARCHAR NOT NULL,
+    weekly_data_fingerprint VARCHAR NOT NULL,
+    scoring_fingerprint VARCHAR NOT NULL,
+    weeks_scored INTEGER NOT NULL,
+    optimal_lineup_points DOUBLE,
+    best_ball_points DOUBLE,
+    drafted_starter_games INTEGER,
+    starter_slot_weeks INTEGER,
+    unfilled_starter_slot_weeks INTEGER,
+    points_percentile DOUBLE,
+    mapping_coverage DOUBLE NOT NULL,
+    status VARCHAR NOT NULL,
+    metrics_payload JSON NOT NULL,
+    built_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (league_season_id, team_id, metric_version)
 );
 """
 
@@ -657,6 +735,20 @@ ALTER TABLE baseline_evaluation_metadata ADD COLUMN IF NOT EXISTS build_fingerpr
 ALTER TABLE adp_snapshots ADD COLUMN IF NOT EXISTS source_stddev DOUBLE;
 ALTER TABLE adp_snapshots ADD COLUMN IF NOT EXISTS source_movement_horizon VARCHAR;
 ALTER TABLE league_rules ADD COLUMN IF NOT EXISTS user_draft_slot INTEGER;
+ALTER TABLE league_rules ADD COLUMN IF NOT EXISTS draft_date TIMESTAMPTZ;
+ALTER TABLE league_rules ADD COLUMN IF NOT EXISTS source_dataset_id VARCHAR;
+ALTER TABLE league_rules ADD COLUMN IF NOT EXISTS row_fingerprint VARCHAR;
+ALTER TABLE league_rules ADD COLUMN IF NOT EXISTS loaded_at TIMESTAMPTZ;
+ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS position VARCHAR;
+ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS source_platform VARCHAR;
+ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS source_player_id VARCHAR;
+ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS mapping_confidence VARCHAR;
+ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS source_dataset_id VARCHAR;
+ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS row_fingerprint VARCHAR;
+ALTER TABLE draft_picks ADD COLUMN IF NOT EXISTS loaded_at TIMESTAMPTZ;
+ALTER TABLE team_outcomes ADD COLUMN IF NOT EXISTS source_dataset_id VARCHAR;
+ALTER TABLE team_outcomes ADD COLUMN IF NOT EXISTS row_fingerprint VARCHAR;
+ALTER TABLE team_outcomes ADD COLUMN IF NOT EXISTS loaded_at TIMESTAMPTZ;
 """
 
 
@@ -715,6 +807,10 @@ class Warehouse:
             "draft_events",
             "draft_recommendation_runs",
             "team_outcomes",
+            "league_history_imports",
+            "league_history_leagues",
+            "roster_construction_features",
+            "draft_only_team_metrics",
         ]
         if not self.path.exists():
             return {table: 0 for table in tables}

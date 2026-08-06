@@ -13,8 +13,8 @@ The project climbs a model ladder. A more complex model is adopted only when it 
 9. **Complete foundation:** Archive immutable dated ADP snapshots and build honest movement features plus persistence, linear, and exponentially weighted baselines with explicit readiness status.
 10. **Complete transparent baseline:** Estimate conditional next-pick availability from source spread with labeled fallback assumptions. Calibration and supervised ML remain unavailable until the sample is sufficient.
 11. **Complete engine:** Build an event-sourced snake-draft state, exact lineup assignment, transparent ruleset-aware scoring, and seeded Monte Carlo rest-of-draft comparisons. Production activation remains gated by canonical market mappings.
-12. **Next:** Polish the Phase 7 application, data-center, league-setup, post-draft, export, and learning workflows around the validated service boundaries.
-13. Train playoff or championship outcomes only after a documented real-history sample gate is met.
+12. **Complete:** Deliver the Phase 7 application plus Phase 8 Data Center intake, League History workspace, manual-data guides, descriptive roster construction, and draft-only reports.
+13. **Locked:** Consider playoff or championship evaluation only after the documented real-history gate is met and an independently reviewed future modeling phase is authorized.
 
 ## Phase 3 evidence
 
@@ -50,4 +50,4 @@ The versioned `phase6-baseline-v1` configuration has fingerprint `17e0337939917f
 
 This is engine validation, not a claim that current production recommendations are active. The live pool has 1,367 canonical projection rows and 203 draftable QB/RB/WR/TE ADP rows, but none of those market rows currently have a reviewed canonical player ID. The 43 remaining PK/DEF rows stay in the Phase 5 archive outside this ruleset's recommendation coverage. Manual state creation, picks, undo, replacement, rosters, and replay are available; recommendations and Monte Carlo return `identity_mapping_required`. Display names are never used to bridge the gap.
 
-No recommendation payload contains or implies a championship probability. See [the Phase 6 evaluation](PHASE_6_DRAFT_ENGINE_EVALUATION.md). Phase 7 is next for application/data-center/post-draft polish, while identity review is the operator prerequisite for live Phase 6 activation.
+No recommendation payload contains or implies a championship probability. See [the Phase 6 evaluation](PHASE_6_DRAFT_ENGINE_EVALUATION.md). The Phase 7 application and Phase 8 history framework are now implemented, while identity review remains the operator prerequisite for live Phase 6 activation.

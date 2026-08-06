@@ -182,13 +182,13 @@ One row per imported or locally saved league-season configuration. `normalized_r
 | Draft context | `team_count`, nullable `user_draft_slot`, `draft_type`, and `rounds`. |
 | Roster context | Canonical starter/FLEX JSON plus bench and IR counts. |
 | Scoring and playoffs | Canonical scoring JSON and nullable validated playoff settings. |
-| Integrity | Canonical normalized rules JSON and the SHA-256 ruleset fingerprint. |
+| Integrity | Canonical normalized rules JSON, SHA-256 ruleset fingerprint, nullable immutable-source dataset ID, row fingerprint, and load timestamp. |
 
 `LeagueSetupRepository` upserts by `league_season_id`, but rejects an ID already owned by a historical-only row whose `user_draft_slot` is null. It then reloads the saved setup and verifies every decomposed rules field against the normalized JSON and fingerprint. Its versioned YAML envelope stores the same setup plus `sha256:<ruleset_fingerprint>`; import rejects unknown fields, invalid team-dependent values, and fingerprint mismatches.
 
 ## `draft_picks`
 
-One row per materialized imported or completed-draft pick. Team identifiers are pseudonymous. The ADP snapshot is nullable when it is unknown. This table is not the Phase 6 live-state authority because it cannot retain undo and replacement history; `draft_events` is authoritative for an active local session.
+One row per materialized imported or completed-draft pick. Team identifiers are pseudonymous. Phase 8 rows retain source platform/player ID, player display/position evidence, nullable canonical `player_id`, mapping confidence, immutable-source dataset ID, row fingerprint, and load timestamp. A name is never accepted as a canonical join. The ADP snapshot is nullable when it is unknown. This table is not the Phase 6 live-state authority because it cannot retain undo and replacement history; `draft_events` is authoritative for an active local session.
 
 ## `draft_sessions`
 
@@ -220,9 +220,10 @@ These are typed service contracts, not additional DuckDB tables:
 
 | Contract | Authority and fields |
 |---|---|
-| `DataCenterSnapshot` | Read-only inventory of immutable manifests/files, grouped source coverage, canonical table counts, current audit result, and a closed action-capability catalog. Acquisition results reference written archive/manifest paths; raw data is never overwritten. A league-history package may be quarantined as archive-only evidence, but no Phase 7 contract parses, normalizes, or models it. |
+| `DataCenterSnapshot` | Read-only inventory of immutable manifests/files, grouped source coverage, canonical table counts, current audit result, and a closed action-capability catalog. Acquisition results reference written archive/manifest paths; raw data is never overwritten. Phase 8 adds an archive-first, validate-then-commit action for versioned league-history ZIPs; standalone CSV/JSON remains archive-only. |
 | `ModelLabSnapshot` | Read-only view of the validated projection run, targets, feature contract, chronological folds, Phase 3/4 metrics, champion selections, residuals, feature importance, model-card/diagnostic paths, live players, and registered limitations. It cannot train or publish a model. |
 | `LeagueSetupRecord` | Exact normalized `LeagueRules`, user draft slot, platform, local setup ID, and optional playoff settings. `LeagueRules.fingerprint()` remains the rules identity. |
+| `LeagueHistorySnapshot` | Read-only Phase 8 package quality, canonical coverage, pseudonymous team outcomes, roster features, drafted-only metrics, exact gate criteria, and next action. Its gate can report only locked or eligible-for-review; it cannot train or publish an outcome model. |
 | `LearningCenterCatalog` | Deterministic guide/notebook inventory with title, concise Markdown-derived summary, project-relative path, kind, and availability. Notebook code cells are not executed. |
 | `PostDraftReport` | Fingerprinted JSON-compatible output bound to session version, state/pool/model/ADP/rules lineage, selected team, exact lineup, player values, positional capital, ADP comparison, replacement risk, strategy baselines, strengths, weaknesses, and limitations. |
 
@@ -230,4 +231,20 @@ The post-draft report remains truthful for partial evidence: incomplete rosters 
 
 ## `team_outcomes`
 
-One row per pseudonymous team and season. Outcome fields remain nullable when the uploaded history does not contain them. No championship probability is inferred from this table until a later training gate is satisfied.
+One row per pseudonymous team and season. Outcome fields remain nullable when the uploaded history does not contain them. Phase 8 adds immutable-source dataset ID, row fingerprint, load timestamp, and nullable `draft_only_metrics` populated only by a ready descriptive build. No championship probability is inferred from this table until a later training and evaluation phase passes the separate written gate.
+
+## `league_history_imports`
+
+One durable row per immutable package SHA-256. It records schema version, archive manifest/dataset lineage, raw and normalized fingerprints, status, rule/pick/outcome/unresolved counts, import time, and canonical JSON quality/readiness evidence. Re-importing identical bytes returns the stored evidence and does not duplicate canonical rows.
+
+## `league_history_leagues`
+
+One reconciliation row per imported league-season. It binds the package and ruleset fingerprints to season/team count, expected and actual pick rows, outcome rows, resolved pick rows, and the separate `draft_complete`, `outcomes_complete`, and `analysis_ready` flags.
+
+## `roster_construction_features`
+
+One row per `(league_season_id, team_id, feature_version)`. The JSON payload contains original-draft position counts by round, positional draft capital, first QB/RB/WR/TE rounds, RB/WR counts through fixed round cutoffs, exact starter coverage, bench depth, ruleset starter demand, and explicit unavailable reasons for unsupported time-valid features. Package/rules fingerprints and build time preserve lineage.
+
+## `draft_only_team_metrics`
+
+One row per `(league_season_id, team_id, metric_version)`. Ready rows contain weekly-data and scoring fingerprints, weeks scored, optimal drafted-only points, equivalent best-ball total, drafted starter games, starter-slot weeks, unfilled drafted-only slots, within-league percentile, and mapping coverage. Blocked rows retain a named status and mapping coverage while unsupported numeric metrics stay null.

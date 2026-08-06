@@ -424,6 +424,339 @@ def test_confirmed_ffc_mapping_populates_registry_and_resolves_future_reviews(
     assert canonical_confidence == ("exact",)
 
 
+def test_league_history_picks_require_review_and_apply_mapping_only(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    _scenario(config)
+    warehouse = Warehouse(config.resolve(config.paths.warehouse))
+    package_fingerprint = "a" * 64
+    normalized_fingerprint = "b" * 64
+    ruleset_fingerprint = "c" * 64
+    history_dataset_id = "history-dataset"
+    initial_quality_report = json.dumps(
+        {
+            "quality": {
+                "source": "league_history",
+                "row_count": 5,
+                "required_field_failures": 0,
+                "duplicate_keys": 0,
+                "unresolved_players": 2,
+                "excluded_rows": 0,
+                "identity_conflicts": 0,
+                "impossible_picks_or_rounds": 0,
+                "unsupported_lineup_slots": 0,
+                "invalid_json_settings": 0,
+                "issues": [
+                    {
+                        "code": "unresolved_player_mappings",
+                        "message": (
+                            "Draft picks without a canonical/source-ID or reviewed mapping were "
+                            "retained with player_id null; display names were not joined."
+                        ),
+                        "count": 2,
+                        "severity": "warning",
+                    }
+                ],
+            },
+            "readiness": {
+                "schema_version": "league-history-v1",
+                "archived": True,
+                "normalized": True,
+                "league_count": 1,
+                "draft_complete_leagues": 1,
+                "outcomes_complete_leagues": 1,
+                "analysis_ready_leagues": 0,
+                "championship_model_status": "disabled",
+                "reasons": [
+                    (
+                        "Championship modeling remains disabled until the separate "
+                        "data-sufficiency gate passes."
+                    ),
+                    (
+                        "No league has a complete draft, complete outcomes, and 100% resolved "
+                        "draft picks."
+                    ),
+                ],
+            },
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    with warehouse.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO league_rules (
+                league_season_id, platform, season, team_count, user_draft_slot,
+                draft_date, draft_type, rounds, starter_slots_json, flex_slots_json,
+                bench_slots, ir_slots, scoring_json, playoff_settings_json,
+                normalized_ruleset_json, ruleset_fingerprint, source_dataset_id,
+                row_fingerprint, loaded_at
+            ) VALUES (
+                'league-a-2025', 'sleeper', 2025, 2, NULL, NULL, 'snake', 1,
+                '{"QB":1}', '{}', 0, 0, '{}', '{}', '{}', ?, ?, ?, ?
+            )
+            """,
+            [ruleset_fingerprint, history_dataset_id, "d" * 64, ACQUIRED_AT],
+        )
+        connection.executemany(
+            """
+            INSERT INTO draft_picks (
+                league_season_id, overall_pick, round, draft_slot, team_id,
+                player_id, player_name, position, source_platform, source_player_id,
+                mapping_confidence, is_keeper, is_autopick, picked_at,
+                adp_snapshot_id, source_dataset_id, row_fingerprint, loaded_at
+            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'unresolved', ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "league-a-2025",
+                    1,
+                    1,
+                    1,
+                    "team-a",
+                    "Unique Receiver",
+                    "WR",
+                    "Sleeper",
+                    "sleeper-unique",
+                    False,
+                    False,
+                    ACQUIRED_AT,
+                    "adp-a",
+                    history_dataset_id,
+                    "e" * 64,
+                    ACQUIRED_AT,
+                ),
+                (
+                    "league-a-2025",
+                    2,
+                    1,
+                    2,
+                    "team-b",
+                    "Unique Receiver",
+                    "WR",
+                    "sleeper",
+                    "sleeper-unique",
+                    True,
+                    False,
+                    ACQUIRED_AT + timedelta(minutes=5),
+                    "adp-b",
+                    history_dataset_id,
+                    "f" * 64,
+                    ACQUIRED_AT + timedelta(minutes=5),
+                ),
+            ],
+        )
+        connection.executemany(
+            """
+            INSERT INTO team_outcomes (
+                league_season_id, team_id, wins, losses, ties, points_for,
+                points_against, all_play_percentile, points_percentile, seed,
+                made_playoffs, final_place, is_champion, draft_only_metrics,
+                source_dataset_id, row_fingerprint, loaded_at
+            ) VALUES ('league-a-2025', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+            """,
+            [
+                (
+                    "team-a",
+                    9,
+                    5,
+                    1400,
+                    1300,
+                    0.75,
+                    0.75,
+                    1,
+                    True,
+                    1,
+                    True,
+                    history_dataset_id,
+                    "1" * 64,
+                    ACQUIRED_AT,
+                ),
+                (
+                    "team-b",
+                    5,
+                    9,
+                    1300,
+                    1400,
+                    0.25,
+                    0.25,
+                    2,
+                    False,
+                    2,
+                    False,
+                    history_dataset_id,
+                    "2" * 64,
+                    ACQUIRED_AT,
+                ),
+            ],
+        )
+        connection.execute(
+            """
+            INSERT INTO league_history_imports (
+                package_fingerprint, schema_version, manifest_dataset_id, raw_path,
+                raw_sha256, normalized_fingerprint, status, league_count, rules_rows,
+                pick_rows, outcome_rows, unresolved_player_rows, quality_report, imported_at
+            ) VALUES (?, 'league-history-v1', ?, 'data/raw/test-history.zip', ?, ?,
+                      'imported', 1, 1, 2, 2, 2, ?, ?)
+            """,
+            [
+                package_fingerprint,
+                history_dataset_id,
+                package_fingerprint,
+                normalized_fingerprint,
+                initial_quality_report,
+                ACQUIRED_AT,
+            ],
+        )
+        connection.execute(
+            """
+            INSERT INTO league_history_leagues VALUES (
+                'league-a-2025', ?, 2025, 2, ?, 2, 2, 2, 0, TRUE, TRUE, FALSE
+            )
+            """,
+            [package_fingerprint, ruleset_fingerprint],
+        )
+        draft_facts_before = connection.execute(
+            """
+            SELECT
+                league_season_id, overall_pick, round, draft_slot, team_id,
+                player_name, position, source_platform, source_player_id,
+                is_keeper, is_autopick, picked_at, adp_snapshot_id,
+                source_dataset_id, row_fingerprint, loaded_at
+            FROM draft_picks
+            ORDER BY league_season_id, overall_pick
+            """
+        ).fetchall()
+
+    review = refresh_identity_review_queue(config)
+
+    assert review.committed
+    assert review.output_path is not None
+    with warehouse.connect(read_only=True) as connection:
+        historical_review = connection.execute(
+            """
+            SELECT
+                candidate_player_id, mapping_confidence, status,
+                evidence_dataset_id, evidence_json
+            FROM identity_review_queue
+            WHERE issue_type = 'league_history_source_mapping'
+              AND source = 'sleeper'
+              AND source_player_id = 'sleeper-unique'
+              AND is_current
+            """
+        ).fetchone()
+        unresolved_picks = connection.execute(
+            "SELECT count(*) FROM draft_picks WHERE player_id IS NULL"
+        ).fetchone()
+    assert historical_review is not None
+    assert historical_review[0:3] == ("p-unique", "high", "pending")
+    assert historical_review[3] == history_dataset_id
+    evidence = json.loads(str(historical_review[4]))
+    assert evidence["unresolved_pick_count"] == 2
+    assert evidence["source_dataset_ids"] == [history_dataset_id]
+    assert unresolved_picks == (2,)
+
+    frame = pd.read_csv(review.output_path, dtype="string", keep_default_na=False)
+    selected = (frame["source"] == "sleeper") & (
+        frame["source_player_id"] == "sleeper-unique"
+    )
+    assert int(selected.sum()) == 1
+    frame = frame.loc[selected].copy()
+    frame.loc[:, "resolution"] = "confirmed"
+    frame.loc[:, "player_id"] = "p-unique"
+    frame.loc[:, "reviewed_at"] = REVIEWED_AT
+    frame.loc[:, "reviewer"] = "integration-test"
+    frame.loc[:, "notes"] = "Confirmed against the source platform player identifier."
+    override_path = tmp_path / "reviewed_history_mapping.csv"
+    frame.to_csv(override_path, index=False)
+
+    first = apply_identity_overrides(config, override_path)
+
+    assert first.committed and first.applied_rows == 1
+    with warehouse.connect(read_only=True) as connection:
+        metadata_after_first = connection.execute(
+            """
+            SELECT unresolved_player_rows, quality_report
+            FROM league_history_imports WHERE package_fingerprint = ?
+            """,
+            [package_fingerprint],
+        ).fetchone()
+    second = apply_identity_overrides(config, override_path)
+
+    assert second.committed and second.applied_rows == 0
+    assert second.matched_existing_rows == 1
+    with warehouse.connect(read_only=True) as connection:
+        mapped_picks = connection.execute(
+            """
+            SELECT player_id, mapping_confidence
+            FROM draft_picks
+            ORDER BY league_season_id, overall_pick
+            """
+        ).fetchall()
+        draft_facts_after = connection.execute(
+            """
+            SELECT
+                league_season_id, overall_pick, round, draft_slot, team_id,
+                player_name, position, source_platform, source_player_id,
+                is_keeper, is_autopick, picked_at, adp_snapshot_id,
+                source_dataset_id, row_fingerprint, loaded_at
+            FROM draft_picks
+            ORDER BY league_season_id, overall_pick
+            """
+        ).fetchall()
+        registry_mapping = connection.execute(
+            """
+            SELECT player_id, mapping_confidence, mapping_source
+            FROM player_source_mappings
+            WHERE source = 'sleeper' AND source_player_id = 'sleeper-unique'
+            """
+        ).fetchone()
+        league_readiness = connection.execute(
+            """
+            SELECT resolved_pick_rows, actual_pick_rows, analysis_ready
+            FROM league_history_leagues WHERE league_season_id = 'league-a-2025'
+            """
+        ).fetchone()
+        metadata_after_second = connection.execute(
+            """
+            SELECT unresolved_player_rows, quality_report
+            FROM league_history_imports WHERE package_fingerprint = ?
+            """,
+            [package_fingerprint],
+        ).fetchone()
+    assert mapped_picks == [("p-unique", "reviewed"), ("p-unique", "reviewed")]
+    assert draft_facts_after == draft_facts_before
+    assert registry_mapping is not None
+    assert registry_mapping[0:2] == ("p-unique", "reviewed")
+    assert str(registry_mapping[2]).startswith("manual:identity-review:")
+    assert league_readiness == (2, 2, True)
+    assert metadata_after_first == metadata_after_second
+    assert metadata_after_second is not None and metadata_after_second[0] == 0
+    stored_report = json.loads(str(metadata_after_second[1]))
+    assert stored_report["quality"]["unresolved_players"] == 0
+    assert not any(
+        issue["code"] == "unresolved_player_mappings"
+        for issue in stored_report["quality"]["issues"]
+    )
+    assert stored_report["readiness"]["analysis_ready_leagues"] == 1
+    assert stored_report["readiness"]["reasons"] == [
+        "Championship modeling remains disabled until the separate data-sufficiency gate passes."
+    ]
+    assert audit_project_data(config).passed
+
+    refreshed = refresh_identity_review_queue(config)
+    assert refreshed.committed
+    with warehouse.connect(read_only=True) as connection:
+        retired = connection.execute(
+            """
+            SELECT is_current FROM identity_review_queue
+            WHERE issue_type = 'league_history_source_mapping'
+              AND source = 'sleeper'
+              AND source_player_id = 'sleeper-unique'
+            """
+        ).fetchone()
+    assert retired == (False,)
+
+
 def test_unknown_player_and_duplicate_override_rows_write_nothing(tmp_path: Path) -> None:
     config = _config(tmp_path)
     _scenario(config)

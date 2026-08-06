@@ -7,6 +7,7 @@ import streamlit as st
 from fantasy_draft_ai.ui.pages.data_center import render as render_data_center
 from fantasy_draft_ai.ui.pages.draft_room import render as render_draft_room
 from fantasy_draft_ai.ui.pages.home import render as render_home
+from fantasy_draft_ai.ui.pages.league_history import render as render_league_history
 from fantasy_draft_ai.ui.pages.league_setup import render as render_league_setup
 from fantasy_draft_ai.ui.pages.learning_center import render as render_learning_center
 from fantasy_draft_ai.ui.pages.model_lab import render as render_model_lab
@@ -14,7 +15,7 @@ from fantasy_draft_ai.ui.pages.post_draft import render as render_post_draft
 
 
 def run_app() -> None:
-    """Configure and run the seven-area local application."""
+    """Configure and run the eight-area local application."""
 
     st.set_page_config(
         page_title="Fantasy Football Draft AI",
@@ -51,6 +52,12 @@ def run_app() -> None:
                 title="Data Center",
                 icon=":material/database:",
                 url_path="data-center",
+            ),
+            st.Page(
+                render_league_history,
+                title="League History",
+                icon=":material/history:",
+                url_path="league-history",
             ),
             st.Page(
                 render_model_lab,

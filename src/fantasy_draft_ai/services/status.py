@@ -15,6 +15,7 @@ from fantasy_draft_ai.recommendations.config import load_draft_engine_config
 from fantasy_draft_ai.rules.models import LeagueRules
 from fantasy_draft_ai.services.adp_market import adp_market_status, load_adp_market_board
 from fantasy_draft_ai.services.draft_room import DraftRoomReadiness, prepare_draft_room
+from fantasy_draft_ai.services.league_history import load_league_history_snapshot
 from fantasy_draft_ai.services.projections import (
     ProjectionBoardStatus,
     load_projection_board,
@@ -328,6 +329,31 @@ def project_status(
         else "append-only replay checks passed"
     )
 
+    history_analysis_available = False
+    history_analysis_status = "no validated league-history package imported"
+    history_model_status = "locked until the written historical-data gate passes"
+    try:
+        history = load_league_history_snapshot(config)
+        coverage = history.coverage
+        history_analysis_available = history.available
+        history_analysis_status = (
+            f"{coverage.loaded_packages} validated package(s); "
+            f"{coverage.league_seasons} league-season(s); "
+            f"{coverage.team_seasons} team-season(s); "
+            f"{coverage.mapped_pick_rate:.1%} reviewed pick mapping"
+            if history.available
+            else history.next_action
+        )
+        history_model_status = (
+            "data gate eligible for independent review; no outcome model has been trained"
+            if history.gate.ready
+            else f"{history.gate.status}; {history.next_action}"
+        )
+    except (OSError, TypeError, ValueError, duckdb.Error):
+        # Status reporting must remain available in clean/test workspaces that do not
+        # yet contain the Phase 8 gate configuration.
+        pass
+
     return [
         StatusItem(
             "Warehouse",
@@ -364,7 +390,12 @@ def project_status(
         StatusItem("ADP movement baselines", movement_status, phase5_status.available),
         StatusItem("Next-pick availability", availability_status, phase5_status.available),
         StatusItem("Supervised ADP model", supervised_status, False),
-        StatusItem("Historical league outcome model", "insufficient uploaded histories", False),
+        StatusItem(
+            "League-history descriptive analysis",
+            history_analysis_status,
+            history_analysis_available,
+        ),
+        StatusItem("Historical league outcome model", history_model_status, False),
         StatusItem("Draft state engine", draft_state_status, draft_state_available),
         StatusItem(
             "Active draft session",

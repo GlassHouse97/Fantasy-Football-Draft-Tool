@@ -1,0 +1,51 @@
+{
+  "capabilities": {
+    "championship_probabilities": "disabled",
+    "league_history_import": "available_archive_first_transactional",
+    "league_history_workspace": "available_read_only_descriptive",
+    "outcome_model_training": "absent",
+    "roster_history_build": "available_idempotent"
+  },
+  "hosted_ci": {
+    "phase_6_and_7_recovery": "pending_actions_outage_retry_not_green",
+    "phase_8": "not_yet_published"
+  },
+  "implementation_status": "PASSED",
+  "phase": 8,
+  "phase_boundary": "Validated personal-history framework and descriptive analysis only; no real histories, outcome model, or championship probability are claimed.",
+  "production_history": {
+    "draft_only_metric_rows": 0,
+    "draft_picks": 0,
+    "league_seasons": 0,
+    "packages": 0,
+    "roster_feature_rows": 0,
+    "team_outcomes": 0,
+    "training_gate": "locked_insufficient_data"
+  },
+  "quality_gates": {
+    "data_audit": {
+      "manifests": 8,
+      "raw_files_verified": 12,
+      "status": "passed"
+    },
+    "focused_pytest": {
+      "passed": 46,
+      "status": "passed"
+    },
+    "mypy": "passed_strict",
+    "browser_qa": {
+      "data_center_history_controls": "passed",
+      "league_history_empty_state_and_gate": "passed",
+      "navigation": "passed",
+      "training_controls": "absent"
+    },
+    "mypy_source_files": 91,
+    "repository_wide_pytest": {
+      "duration_seconds": 123.86,
+      "passed": 276,
+      "status": "passed"
+    },
+    "ruff": "passed"
+  },
+  "schema_version": "1.0"
+}

@@ -8,7 +8,7 @@ A local-first NFL redraft assistant that turns historical football data, exact l
 
 The runnable local foundation includes:
 
-- a packaged Python CLI and seven-route local Streamlit application;
+- a packaged Python CLI and eight-route local Streamlit application;
 - immutable raw-file archives with SHA-256 manifests;
 - a DuckDB warehouse schema for the project’s canonical tables;
 - current `nflreadpy` and Fantasy Football Calculator adapters with offline reuse;
@@ -32,9 +32,11 @@ The runnable local foundation includes:
 - an auditable Data Center and read-only Model Lab that preserve the data and model publication gates;
 - descriptive post-draft lineup, draft-capital, ADP-value, replacement-risk, and strategy reports;
 - a Learning Center that previews local guides and notebook Markdown without executing code;
+- a privacy-gated `league-history-v1` template, safe ZIP validator, immutable archive, and idempotent canonical loader;
+- reviewed historical player mappings, roster-construction features, drafted-only descriptions, and an explicit outcome-model evidence gate;
 - tests for data integrity, leakage, chronological evaluation, model selection, publication integrity, ADP idempotency, availability bounds, scoring, rules, and replacement value.
 
-Phases 0 through 7 are complete locally. Phase 7 organizes the existing contracts into Project Status, Data Center, Model Lab, League Setup, Draft Room, Post-Draft, and Learning Center routes. The draft engine, seeded simulator, and configurable recommendation baseline pass controlled fixture tests, but live production recommendations remain locked: all 203 draftable QB/RB/WR/TE ADP rows currently lack reviewed canonical player mappings. The other 43 PK/DEF rows remain archived and auditable outside this ruleset's recommendation coverage. Manual picks, undo, replacement, rosters, replay verification, and descriptive post-draft reporting remain available. No championship probability is produced.
+Phases 0 through 8 are implemented locally. Phase 8 adds a dedicated League History workspace and the final modeling-framework boundary from the master specification. No real personal history is bundled or imported: production currently has 0 history packages, league-seasons, team outcomes, roster features, and drafted-only metrics. That is an honest empty state, not a demo dataset. The draft engine remains usable for manual picks, undo, replacement, rosters, replay verification, and descriptive post-draft reporting. Live recommendations are separately locked because all 203 draftable QB/RB/WR/TE ADP rows still lack reviewed canonical mappings; 43 PK/DEF rows remain outside this ruleset's coverage. No championship probability is produced.
 
 ## Local setup (Windows PowerShell)
 
@@ -200,7 +202,7 @@ The verified Phase 6 implementation gates include Ruff, strict mypy across 69 so
 
 The Phase 6 GitHub Actions workflow is not recorded as green. GitHub's runner outage canceled the pull-request and `main` workflows before a runner was assigned, so an hourly reminder is active to retry and verify the `main` run when hosted runners recover. The local Phase 6 evidence above remains valid; it is not a substitute for a completed hosted workflow.
 
-## Use the Phase 7 local application
+## Use the local application
 
 Start the app from the repository root:
 
@@ -214,13 +216,14 @@ Streamlit exposes one stable route for each workflow:
 |---|---|
 | `/status` | Project readiness, current data/model facts, blockers, and next action |
 | `/data-center` | Immutable source archives, manifests, warehouse inventory, and quality audit |
+| `/league-history` | Package quality, coverage, pseudonymous team outcomes, roster construction, drafted-only results, and the outcome-model gate |
 | `/model-lab` | Read-only model contract, chronological evidence, diagnostics, and player explanations |
 | `/league-setup` | Exact roster/scoring/playoff rules, draft slot, fingerprint, and YAML backup/restore |
 | `/draft-room` | Persistent manual picks, undo/replace, board filters, rosters, and gated recommendations |
 | `/post-draft` | Descriptive lineup, positional capital, value, risk, strategy, and limitation report |
 | `/learning-center` | Read-only previews and links for guides and notebooks |
 
-The Data Center may run read-only audits, idempotent warehouse initialization, immutable nflverse/snap-count/FFC/manual ESPN archive actions, and an archive-only quarantine intake for CSV/JSON/ZIP league-history packages. Canonical warehouse loads remain explicit CLI handoffs (`load-nflverse`, `load-nflverse-participation`, and `load-adp`) so archiving evidence cannot silently change downstream tables. Sleeper league import and league-history parsing, normalization, analysis, and modeling remain visibly unavailable until their real contracts exist.
+The Data Center may run read-only audits, idempotent warehouse initialization, immutable nflverse/snap-count/FFC/manual ESPN archive actions, and the archive-first `league-history-v1` ZIP workflow. A history ZIP is preserved before in-memory validation and changes canonical tables only through one successful transaction. Standalone history CSV/JSON remains archive-only. Existing nflverse, participation, and ADP canonical loads remain explicit CLI handoffs (`load-nflverse`, `load-nflverse-participation`, and `load-adp`). Sleeper authentication/import remains unavailable.
 
 Model Lab never trains or promotes a model. It reads the validated Phase 3/4 publication and shows target/feature definitions, chronological folds, learned-versus-baseline decisions, metrics, residuals, feature importance, model cards, and served player explanations. Use the CLI training command only when intentionally creating a new model publication.
 
@@ -230,12 +233,40 @@ Phase 7 validation passed Ruff, strict mypy across 87 source files, 251 pytest t
 
 Hosted Phase 7 CI is not recorded as green. GitHub Actions was in a reported major outage when PR #7 was opened, and no workflow run registered for the branch. The existing hourly recovery reminder now tracks both the Phase 6 canceled run and the missing Phase 7 run; local validation is not presented as hosted-CI success.
 
+## Use the Phase 8 history framework
+
+Download the header-only template from Data Center or copy `data/templates/league_history_v1` to a private working location. Pseudonymize league/team/owner information before selecting a file. The app does not transmit the upload, but this checkout is inside OneDrive, so OneDrive, Windows backup, or other software may synchronize the raw local archive.
+
+The safe command-line sequence is:
+
+```powershell
+fantasy-draft data import-league-history C:\path\to\pseudonymized-history.zip
+fantasy-draft data review-identities
+# Inspect and edit the generated worksheet before applying any decisions.
+fantasy-draft data apply-identity-overrides data\processed\identity\identity_review_queue.csv
+fantasy-draft data review-identities
+fantasy-draft features build-roster-history
+fantasy-draft data audit
+fantasy-draft status
+```
+
+The importer rejects unsafe ZIP structures, contract/header errors, inconsistent drafts/outcomes, privacy assertions that are not `false`, and conflicting existing source facts. Exact public platform IDs or reviewed mappings are the only accepted player joins. Re-importing identical bytes or equivalent normalized content does not duplicate canonical rows. A rejected ZIP retains its immutable archive and quality report but writes no rules, picks, or outcomes.
+
+Roster construction and drafted-only optimal-lineup reports are descriptive. Missing player mappings, incomplete weekly evidence, or unsupported positions leave numeric results null with an explicit status. The configured model gate remains locked with the current 0 real histories, and the application exposes no playoff/championship training button even if future counts reach the review threshold.
+
+Start the guided human test with [the Human Testing Guide](docs/HUMAN_TESTING_GUIDE.md), then use [the League History Import Guide](docs/LEAGUE_HISTORY_IMPORT_GUIDE.md) for the manual historical-data workflow.
+
+Phase 8 validation passed Ruff, strict mypy across 91 source files, all 276 repository tests in 123.86 seconds, AppTest with zero exceptions across all eight pages, the production data audit across eight manifests and 12 verified immutable files, and real browser checks of the new history/Data Center workflows. Hosted CI remains a separate publication condition. See [the Phase 8 evaluation](docs/PHASE_8_LEAGUE_HISTORY_EVALUATION.md).
+
 ## Learn the system
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Assumptions](docs/ASSUMPTIONS.md)
 - [Implementation checklist](docs/IMPLEMENTATION_CHECKLIST.md)
 - [User data checklist](docs/USER_DATA_CHECKLIST.md)
+- [Human testing guide](docs/HUMAN_TESTING_GUIDE.md)
+- [League history import guide](docs/LEAGUE_HISTORY_IMPORT_GUIDE.md)
+- [League history and roster construction](docs/learning/11_league_history_and_roster_construction.md)
 - [Scoring and replacement value](docs/learning/SCORING_AND_REPLACEMENT_VALUE.md)
 - [Projection baselines and why they matter](docs/learning/03_baselines_and_why_they_matter.md)
 - [Projection baseline notebook](notebooks/python/03_projection_baselines.ipynb)
@@ -247,6 +278,7 @@ Hosted Phase 7 CI is not recorded as green. GitHub Actions was in a reported maj
 - [Phase 5 ADP and availability evaluation](docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.md)
 - [Phase 6 draft-engine evaluation](docs/PHASE_6_DRAFT_ENGINE_EVALUATION.md)
 - [Phase 7 Streamlit evaluation](docs/PHASE_7_STREAMLIT_EVALUATION.md)
+- [Phase 8 league-history evaluation](docs/PHASE_8_LEAGUE_HISTORY_EVALUATION.md)
 - [Next steps](docs/NEXT_STEPS.md)
 
 ## Data boundaries

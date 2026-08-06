@@ -142,14 +142,15 @@ The `phase6-baseline-v1` configuration is versioned and fingerprinted as `17e033
 
 Controlled mapped fixtures validate simulation and recommendation behavior, including ruleset-sensitive replacement value. Production remains deliberately gated: the current PPR/12-team market has 0 reviewed mappings across 203 draftable QB/RB/WR/TE rows. The other 43 archived PK/DEF rows stay auditable but are excluded from this ruleset's coverage denominator because no corresponding roster slots or projections exist. The manual Streamlit room and CLI remain fully usable for session creation, picks, undo, replacement, rosters, and replay verification; recommendation and Monte Carlo commands remain unavailable until canonical identity review and a new frozen session. See [the Phase 6 evaluation](PHASE_6_DRAFT_ENGINE_EVALUATION.md).
 
-## Phase 7 multipage application
+## Phase 7 multipage application and Phase 8 history workspace
 
-Phase 7 replaces the monolithic Streamlit tabs with seven unique `st.navigation` routes. The root `app.py` is only an entry point; page modules render presentation, while typed services own inventory, validation, persistence, and report calculations.
+Phase 7 replaced the monolithic Streamlit tabs with unique `st.navigation` routes. Phase 8 adds the eighth `/league-history` route without moving validation or warehouse logic into Streamlit. The root `app.py` is only an entry point; page modules render presentation, while typed services own inventory, validation, persistence, and report calculations.
 
 | URL path | Page boundary |
 |---|---|
 | `/status` | Combines read-only project status, projection publication status, market readiness, and the recommended next action. |
 | `/data-center` | Displays source/manifests, canonical table counts, and audit evidence; dispatches only allowlisted safe actions. |
+| `/league-history` | Reads validated package quality, coverage, pseudonymous team outcomes, roster construction, drafted-only metrics, and the explicit outcome-model gate. |
 | `/model-lab` | Reads the validated Phase 3/4 publication; it cannot train or promote models. |
 | `/league-setup` | Validates and persists exact roster, scoring, draft-slot, and playoff inputs. |
 | `/draft-room` | Reuses the Phase 6 repository and event stream for manual state and gated recommendations. |
@@ -165,9 +166,9 @@ Phase 7 replaces the monolithic Streamlit tabs with seven unique `st.navigation`
 - archive nflverse players/weekly statistics and PFR snap counts in timestamped, hashed files;
 - archive FFC ADP from its documented API; and
 - validate and immutably archive a user-selected ESPN CSV;
-- quarantine-archive a user-selected CSV, JSON, or ZIP league-history package without unpacking, parsing, normalizing, or modeling it.
+- archive every user-selected league-history upload first, then validate and transactionally normalize only a versioned `league-history-v1` ZIP.
 
-Canonical loads are deliberately CLI-only handoffs: `fantasy-draft data load-nflverse`, `fantasy-draft data load-nflverse-participation`, and `fantasy-draft data load-adp`. This keeps acquisition separate from normalization and quality-gated downstream rebuilds. Sleeper league import is unsupported. League-history intake is `archive_only`: the page warns the user to pseudonymize the package and stores its bytes and manifest locally, but no importer, canonical loader, analysis, or outcome model consumes it.
+The existing nflverse, participation, and ADP canonical loads remain deliberate CLI-only handoffs: `fantasy-draft data load-nflverse`, `fantasy-draft data load-nflverse-participation`, and `fantasy-draft data load-adp`. League-history ZIP intake is the narrow exception because its archive-first loader validates the complete user-selected contract and commits all canonical rows in one transaction. Standalone history CSV/JSON files remain archive-only. Sleeper authentication/import is unsupported.
 
 ### Model Lab read boundary
 
@@ -186,6 +187,29 @@ The Draft Room builds its searchable/ranked board from the selected persisted se
 The Learning Center scans only `docs/learning/**/*.md` and `notebooks/**/*.ipynb`. It reads Markdown cells for titles and summaries, keeps unreadable resources visible as unavailable, links to repository files, and never executes notebook code.
 
 See [the Phase 7 evaluation](PHASE_7_STREAMLIT_EVALUATION.md) for the repository-wide local validation evidence and current hosted-CI caveat.
+
+## Phase 8 league-history framework
+
+The manual contract is a root-level `league-history-v1` ZIP containing `package.json`, `league_rules.csv`, `draft_picks.csv`, and `team_outcomes.csv`. Weekly rosters, matchups, and transactions are optional archived evidence and are not consumed by the initial descriptive build. The package asserts that personal identifiers have already been removed. Public football player IDs may remain; account, owner, and private crosswalk IDs may not.
+
+The importer follows one fail-closed sequence:
+
+1. copy the original bytes into the immutable raw archive and write a SHA-256 manifest;
+2. verify the archived hash;
+3. inspect the ZIP in memory without extracting it to disk;
+4. reject traversal, absolute paths, nested files/archives, case collisions, links, encrypted members, undeclared files, excessive entries, expanded size, or compression ratio;
+5. validate exact headers, field types, JSON rules, cross-file IDs, picks, team counts, outcomes, and package privacy/version metadata;
+6. resolve players only through canonical platform IDs or the reviewed mapping registry—never display names;
+7. reject conflicting existing source facts and roll back the complete canonical transaction; and
+8. upsert no derived descriptions during import. A separate idempotent feature build reads only committed canonical rows.
+
+Unresolved player evidence is preserved on `draft_picks` with a null `player_id`, source ID, display name, position, and mapping confidence. The existing identity-review queue aggregates those observations for human review. Applying an approved mapping changes only mapping fields on matching picks and leaves original draft facts unchanged.
+
+`roster-construction-v1` describes positional picks by round, positional draft capital, first positions selected, RB/WR counts through rounds 3/5/8/10, exact starter coverage, bench depth, and ruleset demand. Historical ADP value, projected VORP, uncertainty, and bye concentration remain explicitly unavailable when cutoff-safe historical evidence does not exist.
+
+`draft-only-v1` scores weekly optimal lineups made only from the originally drafted players, under the recorded scoring and roster rules and before the recorded playoff start. It reports optimal/best-ball points, drafted starter games, league-season percentile, and unfilled drafted-only starter slots. Any unresolved pick, unsupported position, or missing weekly evidence produces a named unavailable status and nullable metrics rather than fabricated zero performance.
+
+The read-only gate in `configs/league_history_gate.yaml` requires 100 league-seasons, 1,000 team-seasons, five completed seasons, chronological validation/test coverage, 95% completeness/mapping, and balanced target examples before outcome-model evaluation can even be considered. A nonlinear model has a higher evidence floor. Passing those counts means eligible for independent review, not trained, approved, calibrated, or deployed. Phase 8 contains no playoff/championship training action and produces no outcome probability.
 
 ## Interfaces chosen in Phase 0
 

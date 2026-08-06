@@ -31,7 +31,7 @@ def render() -> None:
 
     render_page_header(
         "Project Status",
-        "Phase 7 command center",
+        "Project command center",
         "See what is ready, what is blocked, and the one most useful action to take next.",
     )
 

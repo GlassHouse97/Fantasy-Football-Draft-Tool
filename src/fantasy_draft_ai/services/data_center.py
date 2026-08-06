@@ -1,4 +1,4 @@
-"""Typed Phase 7 service boundary for local data inventory and safe actions.
+"""Typed service boundary for local data inventory and safe actions.
 
 The Streamlit Data Center consumes this module instead of reading manifests or
 DuckDB directly. Inventory reads never modify raw files, and the action runner
@@ -19,13 +19,11 @@ import duckdb
 
 from fantasy_draft_ai.config import AppConfig
 from fantasy_draft_ai.data.audit import AuditResult, audit_project_data
+from fantasy_draft_ai.data.league_history_loader import import_league_history_package
 from fantasy_draft_ai.data.manifests import SourceManifest, sha256_file
 from fantasy_draft_ai.data.sources.espn import import_espn_adp
 from fantasy_draft_ai.data.sources.ffc_adp import SUPPORTED_FORMATS, snapshot_ffc_adp
-from fantasy_draft_ai.data.sources.league_history import (
-    SUPPORTED_HISTORY_SUFFIXES,
-    archive_league_history_package,
-)
+from fantasy_draft_ai.data.sources.league_history import SUPPORTED_HISTORY_SUFFIXES
 from fantasy_draft_ai.data.sources.nflverse import (
     download_nflverse,
     download_nflverse_snap_counts,
@@ -200,7 +198,7 @@ class QualitySummary:
 
 @dataclass(frozen=True)
 class DataActionCapability:
-    """One backend action and whether Phase 7 may execute it in-app."""
+    """One backend action and whether the local app may execute it safely."""
 
     action_id: str
     label: str
@@ -262,7 +260,7 @@ class DataActionResult:
 
 @dataclass(frozen=True)
 class DataCenterSnapshot:
-    """Complete immutable read model for the Phase 7 Data Center page."""
+    """Complete immutable read model for the Data Center page."""
 
     manifests: tuple[ManifestInventory, ...]
     sources: tuple[SourceInventory, ...]
@@ -438,12 +436,16 @@ def data_action_capabilities(
         ),
         DataActionCapability(
             "league_history_import",
-            "Archive league-history package",
+            "Validate and import league-history package",
             True,
             "immutable_archive",
-            "archive_only",
-            "Hash and archive a user package without parsing it or making outcome claims.",
+            "ready",
+            (
+                "Archive every upload immutably, validate league-history-v1 ZIPs, and load "
+                "canonical rows transactionally. Standalone CSV/JSON files remain archive-only."
+            ),
             required_parameters=("path",),
+            command_hint="fantasy-draft data import-league-history <path>",
         ),
     )
 
@@ -585,21 +587,20 @@ def run_safe_data_action(config: AppConfig, request: DataActionRequest) -> DataA
                 records=espn_result.report.row_count,
             )
         if validated.action_id == "league_history_import":
-            history_result = archive_league_history_package(
+            history_result = import_league_history_package(
                 config,
                 Path(_request_string(parameters, "path")),
             )
             return DataActionResult(
                 action_id=validated.action_id,
-                succeeded=True,
-                message=(
-                    "Archived the league-history package without parsing or modeling it. "
-                    "Phase 8 normalization remains unavailable."
-                ),
+                succeeded=history_result.status
+                in {"archive_only", "imported", "already_loaded"},
+                message=history_result.render(),
                 artifact_paths=(
                     str(history_result.raw_path),
                     str(history_result.manifest_path),
                 ),
+                records=history_result.quality.row_count,
             )
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         return DataActionResult(
