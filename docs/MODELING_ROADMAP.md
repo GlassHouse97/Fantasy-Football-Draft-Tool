@@ -10,9 +10,10 @@ The project climbs a model ladder. A more complex model is adopted only when it 
 6. **Complete:** Add training-only residual P10/P50/P90 estimates and evaluate coverage by season, position, and tier.
 7. **Complete:** Compare learned candidates and all five baselines using MAE, RMSE, median AE, rank correlation, top-N overlap, segment error, and a paired-bootstrap selection gate.
 8. Project stat components where practical, then apply the ruleset scoring engine. Keep direct fantasy-point prediction as a benchmark.
-9. **Next:** Archive immutable dated ADP snapshots and build honest movement features/baselines.
-10. **Next:** Estimate empirical next-pick availability from dated snapshots, without claiming supervised ML until the sample is sufficient; keep rest-of-draft simulation separate from player projection.
-11. Train playoff or championship outcomes only after a documented real-history sample gate is met.
+9. **Complete foundation:** Archive immutable dated ADP snapshots and build honest movement features plus persistence, linear, and exponentially weighted baselines with explicit readiness status.
+10. **Complete transparent baseline:** Estimate conditional next-pick availability from source spread with labeled fallback assumptions. Calibration and supervised ML remain unavailable until the sample is sufficient.
+11. **Next:** Build an event-sourced snake-draft state, validate roster legality and replay, and only then add Monte Carlo rest-of-draft comparisons.
+12. Train playoff or championship outcomes only after a documented real-history sample gate is met.
 
 ## Phase 3 evidence
 
@@ -32,6 +33,12 @@ Learned P10/P50/P90 values are signed-residual ranges calibrated from earlier ou
 
 Every registered model card states training seasons, target, features, leakage controls, baseline comparison, uncertainty behavior, limitations, intended use, artifact path, artifact hash, and data lineage. DuckDB and registered attempt-scoped hashes are authoritative: deterministic run contracts may have multiple immutable publication attempts, and the six Phase 4 tables are audited and promoted in one rollback-safe transaction. Top-level reports and registry files are convenience mirrors. See [the Phase 4 evaluation report](PHASE_4_MODEL_EVALUATION.md).
 
-## Phase 5 gate
+## Phase 5 evidence
 
-Phase 5 starts with immutable, timestamped ADP capture history. It must define snapshot identity and scope, preserve raw files and manifests, build time-safe movement features and transparent availability baselines, and evaluate empirical next-pick availability by draft context. A supervised movement or availability model remains unavailable until the archive contains enough independent dated snapshots for chronological evaluation. Player projections remain separate from market availability.
+The validated Phase 5 build has fingerprint `3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b` and snapshot-data fingerprint `44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2`. It verifies and idempotently normalizes one immutable production FFC snapshot with 246 observations. Duplicate manifests collapse, the labeled synthetic ESPN fixture is skipped, and all 246 unresolved identities remain source-keyed with recorded confidence rather than joined by display name.
+
+The build persists 246 cutoff-safe movement features and 738 baseline forecast rows. Persistence is ready for all 246 observations. Linear and exponentially weighted forecasts have zero ready rows because each source player has only one dated observation and those methods require at least three. No later capture is allowed into an earlier feature or forecast.
+
+All 246 availability parameter rows derive their scale from source-reported standard deviation, so zero configured fallbacks are active in this build. The continuity-corrected pick distribution is conditional on the player still being available at the current pick. It is explicitly uncalibrated because no linked real-draft outcomes are archived. A supervised movement or availability model remains unavailable because one independent capture cannot support chronological train/validation/test evaluation. See [the Phase 5 evaluation report](PHASE_5_ADP_AVAILABILITY_EVALUATION.md).
+
+Phase 6 is next. It may consume player projections and Phase 5 availability as separate inputs only after it establishes an event-sourced draft-state boundary. Phase 5 itself makes no recommendation and performs no simulation.

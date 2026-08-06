@@ -9,6 +9,7 @@ from pathlib import Path
 import duckdb
 
 from fantasy_draft_ai.config import AppConfig
+from fantasy_draft_ai.services.adp_market import adp_market_status
 from fantasy_draft_ai.services.projections import (
     ProjectionBoardStatus,
     projection_board_status,
@@ -252,6 +253,21 @@ def project_status(
         )
         board_status = current_phase4_status.message
 
+    phase5_status = adp_market_status(config)
+    movement_status = phase5_status.message
+    availability_status = phase5_status.message
+    supervised_status = phase5_status.supervised_status
+    if phase5_status.available:
+        movement_status = (
+            f"persistence active for {phase5_status.persistence_ready_rows} rows; "
+            f"linear/EW ready for {phase5_status.linear_ready_rows}/"
+            f"{phase5_status.ew_ready_rows}"
+        )
+        availability_status = (
+            f"distribution baseline active for {phase5_status.availability_rows} rows; "
+            f"calibration {phase5_status.calibration_status}"
+        )
+
     return [
         StatusItem(
             "Warehouse",
@@ -272,8 +288,8 @@ def project_status(
             latest_label(snap_count_files),
             bool(snap_count_files),
         ),
-        StatusItem("FFC ADP snapshot", latest_label(ffc_files), bool(ffc_files)),
-        StatusItem("ESPN ADP", latest_label(espn_files), bool(espn_files)),
+        StatusItem("Raw FFC ADP capture", latest_label(ffc_files), bool(ffc_files)),
+        StatusItem("Raw ESPN ADP upload", latest_label(espn_files), bool(espn_files)),
         StatusItem("Identity review queue", identity_status, identity_available),
         StatusItem("Scoring and rules engine", "available (configured logic)", True),
         StatusItem("Player-season features", feature_status, feature_available),
@@ -284,7 +300,10 @@ def project_status(
             board_status,
             current_phase4_status.available,
         ),
-        StatusItem("ADP movement model", "insufficient dated snapshots", False),
+        StatusItem("Canonical ADP warehouse", phase5_status.message, phase5_status.available),
+        StatusItem("ADP movement baselines", movement_status, phase5_status.available),
+        StatusItem("Next-pick availability", availability_status, phase5_status.available),
+        StatusItem("Supervised ADP model", supervised_status, False),
         StatusItem("Historical league outcome model", "insufficient uploaded histories", False),
         StatusItem("Championship probabilities", "disabled", False),
         StatusItem("Draft recommendation score", "not implemented", False),

@@ -1,2 +1,5 @@
 # Generated Matplotlib diagnostics are reviewed visually and verified by SHA-256.
 docs/images/phase4/**/*.svg binary
+
+# These registered text artifacts are hashed from canonical LF bytes.
+docs/model_cards/phase4/**/*.md text eol=lf

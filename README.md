@@ -22,9 +22,12 @@ This first runnable foundation includes:
 - five transparent projection baselines evaluated on expanding 2020-2025 folds;
 - position-specific Ridge and histogram gradient-boosting models with validation-gated champions;
 - a validated 2026 projection board with P10/P50/P90 displays and player explanations;
-- tests for data integrity, leakage, chronological evaluation, model selection, publication integrity, scoring, rules, and replacement value.
+- idempotent, hash-verified normalization of immutable FFC and manual ESPN ADP captures;
+- cutoff-safe ADP movement features with persistence, linear-trend, and exponentially weighted baselines;
+- a transparent next-pick availability distribution with source-reported spread evidence and labeled fallbacks;
+- tests for data integrity, leakage, chronological evaluation, model selection, publication integrity, ADP idempotency, availability bounds, scoring, rules, and replacement value.
 
-Phases 0 through 4 are complete. The app now exposes the validated player-projection board and explanations, clearly labeling learned models, retained transparent baselines, and unvalidated rookie fallbacks. ADP movement, empirical next-pick availability, draft recommendations, and the draft engine remain future work; the app reports those boundaries instead of inventing results.
+Phases 0 through 5 are complete. The app exposes the validated player-projection board plus a separate ADP movement and next-pick availability view. The current archive contains only one independent production snapshot, so persistence is active while linear and exponentially weighted trends remain unavailable. Availability is an uncalibrated distribution baseline, not a draft recommendation. Supervised ADP models, draft simulation, and recommendation logic remain future work.
 
 ## Local setup (Windows PowerShell)
 
@@ -69,6 +72,7 @@ fantasy-draft data download-nflverse --start-season 2025 --end-season 2025
 fantasy-draft data load-nflverse
 fantasy-draft data snapshot-ffc-adp --season 2026 --format ppr --teams 12
 fantasy-draft data import-espn-adp data\templates\espn_adp_snapshot_template.csv
+fantasy-draft data load-adp
 fantasy-draft data review-identities
 fantasy-draft data audit
 ```
@@ -131,6 +135,22 @@ Learned P10/P50/P90 ranges use signed residuals from training-only, earlier out-
 
 DuckDB is authoritative for the one active deterministic run. Every training attempt receives an immutable `publication_id`, and its reports, registry, diagnostic plots, model cards, and serialized artifacts live beneath `<run_id>/<publication_id>/` paths verified by registered SHA-256 hashes. All six Phase 4 tables are staged, audited, and promoted in one DuckDB transaction, so a failed forced retry rolls back to the previously complete publication. The top-level Phase 4 report and `models/registry.json` are convenience mirrors refreshed only after commit. Audit, status, and the app reject partial, stale, orphaned, count-mismatched, or hash-mismatched publication state.
 
+## Reproduce the Phase 5 ADP foundation
+
+Phase 5 verifies every archived FFC or manual ESPN capture against its manifest, collapses duplicate manifests that point to the same immutable raw payload, and loads each production snapshot idempotently. Clearly labeled synthetic captures are skipped by default.
+
+```powershell
+fantasy-draft data load-adp
+fantasy-draft models build-adp-baselines --availability-config configs/adp_availability.yaml --output docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.md
+fantasy-draft data audit
+fantasy-draft status
+fantasy-draft app
+```
+
+The validated build has fingerprint `3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b` and snapshot fingerprint `44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2`. One production FFC snapshot produced 246 canonical observations, 246 movement-feature rows, 738 baseline rows, and 246 availability-parameter rows. All 246 identities remain unresolved and are safely keyed by source identity instead of display name. The labeled ESPN fixture is excluded from the production build.
+
+Persistence is ready for all 246 observations. Linear and exponentially weighted trends require at least three dated observations per source player, so neither is active yet. Every availability scale came from source-reported standard deviation; no configured fallback was needed. These probabilities are explicitly uncalibrated because no linked real-draft outcomes are archived, and no supervised movement or availability model is claimed.
+
 ## Learn the system
 
 - [Architecture](docs/ARCHITECTURE.md)
@@ -144,6 +164,8 @@ DuckDB is authoritative for the one active deterministic run. Every training att
 - [Phase 4 model evaluation](docs/PHASE_4_MODEL_EVALUATION.md)
 - [Active Phase 4 model registry](models/registry.json)
 - [How to read a model card](docs/learning/12_how_to_read_a_model_card.md)
+- [ADP movement and availability](docs/learning/08_adp_movement_and_availability.md)
+- [Phase 5 ADP and availability evaluation](docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.md)
 - [Next steps](docs/NEXT_STEPS.md)
 
 ## Data boundaries

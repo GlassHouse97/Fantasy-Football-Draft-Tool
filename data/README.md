@@ -1,9 +1,9 @@
 # Local data layout
 
-- `raw/`: immutable downloads and manual uploads, including nflverse weekly/player data, nflverse/PFR snap counts, and reviewed identity worksheets under `raw/identity_overrides/`. Ignored by Git except placeholders.
+- `raw/`: immutable downloads and manual uploads, including nflverse weekly/player data, nflverse/PFR snap counts, dated FFC/ESPN ADP captures, and reviewed identity worksheets under `raw/identity_overrides/`. Ignored by Git except placeholders.
 - `interim/`: temporary reproducible transforms.
 - `processed/`: reproducible derived files, including the editable identity-review worksheet under `processed/identity/`.
-- `warehouse/`: the local DuckDB database, including identity, participation, feature, target, baseline-evaluation, and Phase 4 model-publication tables.
+- `warehouse/`: the local DuckDB database, including identity, participation, feature, target, baseline-evaluation, Phase 4 model-publication, and Phase 5 ADP-market tables.
 - `sample/`: small, public, clearly labeled demonstration data.
 - `templates/`: versioned headers and examples for manual data.
 
@@ -54,3 +54,27 @@ Run `phase4-7ae8e9aed04bffca00c0` is bound to fingerprint `7ae8e9aed04bffca00c04
 Learned intervals are P10/P50/P90 signed-residual ranges calibrated only from earlier out-of-fold training predictions and evaluated by season, position, and tier. Transparent-baseline selections and rookie fallbacks remain point-only with `P10=P50=P90`; the project does not imply calibrated uncertainty where none was validated.
 
 The six `player_projection_*` tables hold the active run, model registrations, candidate predictions, champion decisions, evaluation metadata, and live board. The deterministic `run_id` identifies the model/data contract; a unique `publication_id` identifies each immutable training attempt. DuckDB plus registered hashes are authoritative for `models/reports/<run_id>/<publication_id>/`, serialized artifacts, model cards, and diagnostic plots. All six tables are staged, audited, and promoted to `complete` in one DuckDB transaction; an integrity or promotion failure rolls back without displacing the prior complete publication. `docs/PHASE_4_MODEL_EVALUATION.*` and `models/registry.json` are reproducible convenience mirrors refreshed after commit. A changed Phase 3 build or baseline contract invalidates the learned publication.
+
+## Phase 5 ADP market data
+
+`fantasy-draft data load-adp` discovers archived FFC and manual ESPN manifests, verifies raw SHA-256 hashes, collapses duplicate manifests for the same immutable payload, and normalizes production snapshots transactionally. Clearly labeled synthetic fixtures are skipped unless `--include-synthetic` is explicitly supplied. An optional `--manifest PATH` limits a load to one capture. Repeating identical inputs preserves snapshot and observation counts.
+
+The warehouse separates raw market evidence from derived behavior:
+
+- `adp_snapshots` stores source observations, nullable canonical player IDs, and mapping confidence;
+- `adp_snapshot_metadata` binds stable snapshot scope to raw hash, relative path, collapsed manifest IDs, and row count;
+- `adp_movement_features` stores only as-of movement signals available at each capture;
+- `adp_movement_forecasts` stores persistence, linear, and exponentially weighted results plus explicit unavailable reasons;
+- `adp_availability_parameters` stores the observed or configured spread evidence used for next-pick probabilities;
+- `adp_phase5_builds` binds all derived rows and capability statuses to deterministic fingerprints.
+
+Run the production build with:
+
+```powershell
+fantasy-draft data load-adp
+fantasy-draft models build-adp-baselines --availability-config configs/adp_availability.yaml --output docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.md
+```
+
+The validated build fingerprint is `3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b`, and its snapshot-data fingerprint is `44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2`. One production FFC capture produced 246 canonical observations, 246 movement features, 738 forecast rows, and 246 availability parameters. The duplicate manifest was collapsed and the synthetic ESPN fixture skipped. All 246 source identities remain unresolved and are not name-joined.
+
+Persistence is ready for all observations. Linear and exponentially weighted methods remain unavailable because they require at least three dated observations per source player. All availability scales came from source standard deviation, with zero configured fallbacks. The distribution is uncalibrated because no linked real-draft outcomes exist, and no supervised model, draft recommendation, or simulation is stored by Phase 5.

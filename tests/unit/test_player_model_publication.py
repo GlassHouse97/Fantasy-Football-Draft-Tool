@@ -43,6 +43,34 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def test_registered_text_hash_is_stable_across_git_line_endings(tmp_path: Path) -> None:
+    card = tmp_path / "model-card.md"
+    card.write_bytes(b"# Model\r\n\r\nValidated text.\r\n")
+    expected = hashlib.sha256(b"# Model\n\nValidated text.\n").hexdigest()
+
+    text_issues: list[str] = []
+    repository._audit_registered_file(
+        tmp_path,
+        card.name,
+        expected,
+        None,
+        "model card",
+        text_issues,
+    )
+    assert text_issues == []
+
+    binary_issues: list[str] = []
+    repository._audit_registered_file(
+        tmp_path,
+        card.name,
+        expected,
+        None,
+        "artifact",
+        binary_issues,
+    )
+    assert binary_issues == [f"A registered Phase 4 artifact hash does not match: {card.name}."]
+
+
 _PHASE4_TABLES = (
     "player_projection_runs",
     "player_projection_models",

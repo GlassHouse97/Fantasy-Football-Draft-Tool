@@ -947,5 +947,17 @@ def _audit_registered_file(
         return
     if expected_size is not None and resolved.stat().st_size != expected_size:
         issues.append(f"A registered Phase 4 {label} has the wrong size: {relative_path}.")
-    if sha256_file(resolved) != expected_hash:
+    actual_hash = (
+        _canonical_text_sha256(resolved)
+        if label in {"model card", "Markdown evaluation report"}
+        else sha256_file(resolved)
+    )
+    if actual_hash != expected_hash:
         issues.append(f"A registered Phase 4 {label} hash does not match: {relative_path}.")
+
+
+def _canonical_text_sha256(path: Path) -> str:
+    """Hash UTF-8 publication text independently of Git checkout line endings."""
+
+    canonical_bytes = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(canonical_bytes).hexdigest()

@@ -77,11 +77,29 @@
 - [x] Require one complete current run with reconciled lineage, counts, chronology, board coverage, and file hashes before audit/status/app availability.
 - [x] Record run ID `phase4-7ae8e9aed04bffca00c0` and run fingerprint `7ae8e9aed04bffca00c04d05e623f8afd20877dcfa09ddf43a8c1a7e8c34db03`.
 - [x] Expose the validated board, filters, intervals, explanations, and lineage in the local Streamlit app.
-- [x] Keep ADP movement, next-pick availability, draft recommendations, and the draft engine explicitly unavailable.
+- [x] At the Phase 4 publication boundary, keep ADP movement, next-pick availability, draft recommendations, and the draft engine explicitly unavailable.
+
+## Phase 5 — ADP movement and next-pick availability (complete foundation)
+
+- [x] Verify immutable FFC and manual ESPN captures against their SHA-256 manifests before normalization.
+- [x] Define stable snapshot identity from source, season, scoring format, team count, position scope, capture time, and raw hash.
+- [x] Collapse duplicate manifests that reference the same raw capture and make repeat loads idempotent.
+- [x] Skip clearly labeled synthetic ESPN fixture data from production loads by default.
+- [x] Normalize one production FFC snapshot into 246 canonical ADP observations.
+- [x] Preserve all 246 unresolved identities with source keys and mapping confidence instead of joining by display name.
+- [x] Build 246 chronological, cutoff-safe movement-feature rows.
+- [x] Persist 738 forecast rows across persistence, linear-trend, and exponentially weighted methods with explicit readiness status.
+- [x] Activate persistence for 246 rows and truthfully retain zero ready linear or exponentially weighted rows until at least three dated observations exist.
+- [x] Persist 246 availability parameter rows using source standard deviation; record zero configured fallbacks in the validated build.
+- [x] Expose conditional next-pick availability separately from player quality and market movement.
+- [x] Mark availability uncalibrated because no linked real-draft outcomes are archived.
+- [x] Keep supervised movement and availability unavailable because one independent production snapshot cannot support chronological training and validation.
+- [x] Record build fingerprint `3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b` and snapshot fingerprint `44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2`.
+- [x] Publish the Phase 5 evaluation report, learning chapter, app market view, audit/status checks, and integration/unit tests.
+- [x] Keep draft recommendations, mutable draft state, and Monte Carlo simulation explicitly unavailable.
 
 ## Future phases
 
-- [ ] Phase 5 (next): immutable dated ADP movement features/baselines and empirical next-pick availability; no supervised availability claim until snapshot volume is sufficient.
-- [ ] Phase 6: event-sourced snake draft and Monte Carlo optimization.
+- [ ] Phase 6 (next): event-sourced snake draft and Monte Carlo optimization.
 - [ ] Phase 7: full multipage Streamlit workflow.
 - [ ] Phase 8: descriptive league-history analysis and gated outcome modeling.

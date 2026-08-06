@@ -9,6 +9,7 @@ import yaml
 from fantasy_draft_ai.config import load_config
 from fantasy_draft_ai.rules.models import LeagueRules
 from fantasy_draft_ai.scoring.engine import PlayerStatLine, score_player
+from fantasy_draft_ai.services.adp_market import load_adp_market_board
 from fantasy_draft_ai.services.projections import (
     PROJECTION_TARGETS,
     TARGET_LABELS,
@@ -61,10 +62,13 @@ st.caption("Local-first projections, ruleset-aware value, and explanations you c
 
 config = load_config()
 projection_board = load_projection_board(config)
+adp_market_board = load_adp_market_board(config)
 
 tab_names = ["Project status"]
 if projection_board.available:
     tab_names.append(f"{config.project.prediction_season} projections")
+if adp_market_board.available:
+    tab_names.append("ADP availability")
 tab_names.extend(["Scoring sandbox", "Learning path"])
 tabs = st.tabs(tab_names)
 tab_by_name = dict(zip(tab_names, tabs, strict=True))
@@ -119,7 +123,7 @@ if projection_board.available:
         st.dataframe(
             display_frame,
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "P10": st.column_config.NumberColumn(format="%.2f"),
                 "P50": st.column_config.NumberColumn(format="%.2f"),
@@ -178,6 +182,99 @@ if projection_board.available:
             if projection_board.run is not None:
                 st.json(projection_board.run.as_dict())
             st.json([selection.as_dict() for selection in projection_board.selections])
+
+if adp_market_board.available:
+    with tab_by_name["ADP availability"]:
+        st.subheader("ADP movement and next-pick availability")
+        st.caption(
+            "This view estimates market survival, not player quality or a draft recommendation. "
+            "Probabilities use source spread when available and remain uncalibrated until real "
+            "draft outcomes are archived."
+        )
+        input_col, next_col = st.columns(2)
+        with input_col:
+            current_pick = int(
+                st.number_input("Current overall pick", min_value=1, max_value=400, value=1)
+            )
+        with next_col:
+            next_pick = int(
+                st.number_input(
+                    "Your next overall pick",
+                    min_value=current_pick + 1,
+                    max_value=500,
+                    value=max(current_pick + 1, 24),
+                )
+            )
+
+        positions = sorted({row.position for row in adp_market_board.rows})
+        filter_col, search_col = st.columns([1, 2])
+        with filter_col:
+            selected_positions = st.multiselect("ADP position", positions, default=positions)
+        with search_col:
+            market_search = st.text_input(
+                "Search ADP player",
+                placeholder="Type a player or team",
+            )
+        probability_rows: list[dict[str, Any]] = []
+        availability_config = adp_market_board.availability_config
+        if availability_config is None:
+            st.error("The versioned availability assumptions could not be loaded.")
+        else:
+            for row in adp_market_board.rows:
+                if row.position not in selected_positions:
+                    continue
+                searchable = f"{row.player_name} {row.nfl_team or ''}".casefold()
+                if market_search.casefold() not in searchable:
+                    continue
+                estimate = row.estimate_availability(
+                    current_pick=current_pick,
+                    next_pick=next_pick,
+                    config=availability_config,
+                )
+                probability_rows.append(
+                    {
+                        "Player": row.player_name,
+                        "Pos": row.position,
+                        "Team": row.nfl_team,
+                        "ADP": row.average_pick,
+                        "P available": estimate.probability_available_at_next_pick,
+                        "P selected first": estimate.probability_selected_before_next_pick,
+                        "Spread method": estimate.spread_method,
+                        "Sample": estimate.sample_size,
+                        "7-day change": row.change_7d,
+                        "History": row.observation_count,
+                        "Trend status": row.linear_status,
+                        "Mapping": row.mapping_confidence,
+                        "Source": row.source,
+                    }
+                )
+            probability_frame = pd.DataFrame.from_records(probability_rows)
+            if not probability_frame.empty:
+                probability_frame = probability_frame.sort_values(["ADP", "Player"], kind="stable")
+            st.dataframe(
+                probability_frame,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "ADP": st.column_config.NumberColumn(format="%.1f"),
+                    "P available": st.column_config.ProgressColumn(
+                        min_value=0.0,
+                        max_value=1.0,
+                        format="percent",
+                    ),
+                    "P selected first": st.column_config.NumberColumn(format="percent"),
+                    "7-day change": st.column_config.NumberColumn(format="%.2f"),
+                },
+            )
+            st.caption(
+                f"Showing {len(probability_rows):,} market rows. Positive ADP movement means "
+                "the player moved later; missing history remains blank."
+            )
+            st.warning(
+                "Linear and exponentially weighted movement remain unavailable for rows with "
+                "fewer than three independent dated observations. No supervised availability "
+                "or calibration claim is active."
+            )
 
 with tab_by_name["Scoring sandbox"]:
     rules_path = config.project_root / "configs" / "example_ppr_12_team.yaml"

@@ -1,0 +1,43 @@
+{
+  "availability_config_fingerprint": "771b06a5daf10597c24460299bf9cbefc7953b33a82f9177c4b939063810b4d5",
+  "availability_fallback_rows": 0,
+  "availability_method_version": "phase5-normal-pick-distribution-v1",
+  "availability_observed_spread_rows": 246,
+  "availability_parameter_rows": 246,
+  "availability_status": "distribution_baseline_active_uncalibrated",
+  "build_fingerprint": "3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b",
+  "build_version": "phase5-adp-availability-v1",
+  "calibration_status": "unavailable_no_linked_draft_outcomes",
+  "capture_end": "2026-08-04T21:03:26.341167+00:00",
+  "capture_start": "2026-08-04T21:03:26.341167+00:00",
+  "capture_timestamp_count": 1,
+  "excluded_identity_rows": 0,
+  "exponentially_weighted_ready_rows": 0,
+  "forecast_horizon_days": 1,
+  "issues": [
+    "246 player rows remain unresolved; availability is keyed to source IDs and is not joined by display name.",
+    "Linear and exponentially weighted movement baselines require at least three dated observations per source player; persistence remains active.",
+    "Availability probabilities are distribution-based and uncalibrated because real draft outcomes are not yet archived."
+  ],
+  "linear_ready_rows": 0,
+  "mapped_rows": 0,
+  "movement_baseline_version": "phase5-adp-movement-baselines-v1",
+  "movement_feature_rows": 246,
+  "movement_feature_version": "phase5-adp-movement-features-v1",
+  "movement_forecast_rows": 738,
+  "movement_status": "persistence_active_trends_insufficient_history",
+  "observation_rows": 246,
+  "persistence_ready_rows": 246,
+  "phase": 5,
+  "phase_boundary": "No draft recommendation, draft state, Monte Carlo simulation, or supervised availability model is produced in Phase 5.",
+  "schema_version": "1.0",
+  "snapshot_count": 1,
+  "snapshot_data_fingerprint": "44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2",
+  "sources": [
+    "ffc"
+  ],
+  "status": "PASSED",
+  "supervised_status": "unavailable_insufficient_dated_snapshots",
+  "unresolved_rows": 246,
+  "validation_strategy": "chronological_cutoff_only"
+}
