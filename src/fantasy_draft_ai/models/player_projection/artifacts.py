@@ -11,7 +11,7 @@ import hashlib
 import os
 import tempfile
 from dataclasses import dataclass
-from pathlib import Path, PurePath
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import Any
 
 
@@ -79,7 +79,15 @@ def resolve_artifact_path(artifact_root: Path, relative_path: str | Path) -> Pat
     portable = raw.replace("\\", "/")
     path = Path(portable)
     pure = PurePath(portable)
-    if path.is_absolute() or path.drive or pure.is_absolute() or ".." in pure.parts:
+    windows_path = PureWindowsPath(portable)
+    if (
+        path.is_absolute()
+        or path.drive
+        or pure.is_absolute()
+        or windows_path.drive
+        or windows_path.is_absolute()
+        or ".." in pure.parts
+    ):
         raise ArtifactPathError("Artifact path must be relative and cannot traverse parents.")
     if pure.parts in {(), (".",)} or path.suffix.casefold() != ".joblib":
         raise ArtifactPathError("Artifact path must name a relative .joblib file.")

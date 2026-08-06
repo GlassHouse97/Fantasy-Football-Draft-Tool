@@ -91,7 +91,15 @@ def test_persist_verified_model_is_relative_atomic_and_reloadable(tmp_path: Path
 
 @pytest.mark.parametrize(
     "unsafe_path",
-    ["../outside.joblib", "nested/../../outside.joblib", "C:/outside.joblib", "/outside.joblib"],
+    [
+        "../outside.joblib",
+        "nested/../../outside.joblib",
+        "C:/outside.joblib",
+        "C:outside.joblib",
+        r"C:\outside.joblib",
+        r"\\server\share\outside.joblib",
+        "/outside.joblib",
+    ],
 )
 def test_artifact_path_rejects_traversal_and_absolute_paths(
     tmp_path: Path, unsafe_path: str
