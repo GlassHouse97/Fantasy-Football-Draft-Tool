@@ -13,6 +13,8 @@ __pycache__/
 htmlcov/
 .streamlit/secrets.toml
 .streamlit-qa/
+.agents/
+.claude/
 
 # Local data and generated artifacts. Keep templates, samples, and .gitkeep files.
 data/raw/**/*

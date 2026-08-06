@@ -26,6 +26,14 @@ If the command is not recognized, use the module entry point from the activated 
 python -m streamlit run app.py
 ```
 
+## Restore a clean testing baseline
+
+Project Status includes a collapsed **Local testing controls** section with a **Restore app defaults** button. The confirmation dialog shows the exact saved-setup, practice-draft, and pick counts and requires the phrase `RESTORE DEFAULTS` before it can run.
+
+The restore removes only saved local league setups, practice draft sessions, their picks/events, and browser-session widget state. It does **not** remove immutable raw archives, manifests, canonical players or weekly stats, ADP evidence, reviewed identity mappings, model artifacts, or imported league-history evidence. If another browser tab changes local state after the dialog opens, the transaction stops before deletion and requires a fresh confirmation. After restoration, League Setup again prefills the checked-in 12-team PPR reference rules without inserting a replacement database row.
+
+Download a setup YAML first if you may want to reuse custom rules. The restore cannot recover deleted practice-draft state.
+
 ## What to test first
 
 ### 1. Project Status
@@ -38,6 +46,8 @@ Confirm that the page clearly distinguishes:
 - a local passing result from hosted GitHub Actions evidence.
 
 Nothing on this page should imply that playoff or championship probabilities exist.
+
+Open **Local testing controls** and confirm the restore dialog explains what it removes and preserves. Cancel it during a normal walkthrough. Use the final restore only when you intentionally want a clean test run.
 
 ### 2. Data Center
 
@@ -113,5 +123,7 @@ For each page, record:
 - whether you knew the next safe action;
 - whether an unavailable feature explained why it was unavailable; and
 - the exact error text and action that produced it.
+
+Also mark every place where the interface assumes technical knowledge. In particular, note jargon that needs plain-language copy, advanced evidence that could move behind an expander, unclear first actions, and screens where one recommended next step would be more useful than several equal-looking controls.
 
 Screenshots are useful for UI feedback, but do not include personal league data, local credentials, or a completed private crosswalk. These notes will drive the first usability iteration after Phase 8.

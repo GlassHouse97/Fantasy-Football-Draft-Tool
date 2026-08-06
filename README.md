@@ -256,7 +256,7 @@ Roster construction and drafted-only optimal-lineup reports are descriptive. Mis
 
 Start the guided human test with [the Human Testing Guide](docs/HUMAN_TESTING_GUIDE.md), then use [the League History Import Guide](docs/LEAGUE_HISTORY_IMPORT_GUIDE.md) for the manual historical-data workflow.
 
-Phase 8 validation passed Ruff, strict mypy across 91 source files, all 276 repository tests in 123.86 seconds, AppTest with zero exceptions across all eight pages, the production data audit across eight manifests and 12 verified immutable files, and real browser checks of the new history/Data Center workflows. Hosted CI remains a separate publication condition. See [the Phase 8 evaluation](docs/PHASE_8_LEAGUE_HISTORY_EVALUATION.md).
+Phase 8 validation passed Ruff, strict mypy across 92 source files, all 281 repository tests in 139.01 seconds, AppTest with zero exceptions across all eight pages, the production data audit across eight manifests and 12 verified immutable files, and real browser checks of the history, Data Center, and protected local-reset workflows. Hosted CI remains a separate publication condition. See [the Phase 8 evaluation](docs/PHASE_8_LEAGUE_HISTORY_EVALUATION.md).
 
 ## Learn the system
 

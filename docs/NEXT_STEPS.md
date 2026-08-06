@@ -27,6 +27,21 @@ fantasy-draft app
 
 Use [the Human Testing Guide](HUMAN_TESTING_GUIDE.md) for the first click-through. Record confusing labels, unexpected behavior, unavailable-feature explanations, and the exact action/error when something fails. That usability pass is the safest next iteration after Phase 8.
 
+## Next-session handoff — August 6, 2026
+
+Today completed the Phase 8 history framework, the eighth Streamlit workspace, safe history import, reviewed historical identities, descriptive roster analysis, the outcome-model evidence gate, repository-wide tests, production audit, browser QA, commits, branch push, and draft PR #8. A protected **Restore app defaults** control was then added for repeatable human testing. It removes local setups and practice drafts while preserving source data, models, and history evidence.
+
+When testing resumes:
+
+1. Open Project Status and decide whether to continue the current practice state or use **Local testing controls → Restore app defaults**.
+2. Walk through the app as a first-time fantasy-football user, without relying on the build documentation to explain each screen.
+3. Test saving rules, creating a practice draft, recording/undoing/replacing picks, refreshing, and reading the post-draft report.
+4. Inspect every locked feature and decide whether its explanation says what is missing and what you can do next.
+5. Download the history template and assess whether the manual data requirements are understandable before entering private data.
+6. Keep a specific list of UI simplifications: jargon to translate, advanced details to collapse, actions that need stronger hierarchy, and pages that need a single guided next step.
+
+The next product iteration should prioritize that usability evidence. Do not add more modeling complexity merely because the technical foundation exists.
+
 ## What is already usable without personal history
 
 You do not need a personal league-history package to open the app, inspect player models, save league rules, create a draft session, or manually record picks. The session is persisted in DuckDB and verified through event replay, so a browser refresh does not erase the draft.

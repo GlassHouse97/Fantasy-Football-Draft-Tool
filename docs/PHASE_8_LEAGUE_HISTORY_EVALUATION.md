@@ -75,11 +75,13 @@ Focused Phase 8 validation currently records:
 The final local publication evidence is:
 
 - repository-wide Ruff: **passed**;
-- repository-wide strict mypy: **passed across 91 source files**;
-- repository-wide pytest: **276 passed in 123.86 seconds**;
+- repository-wide strict mypy: **passed across 92 source files**;
+- repository-wide pytest: **281 passed in 139.01 seconds**;
 - Streamlit AppTest: **zero exceptions across the entry point and all eight pages**;
 - CLI data audit: **passed across eight manifests and 12 verified immutable raw files**; and
-- real browser QA: **passed** for the new navigation, League History empty state, exact 0/14 locked gate, absence of training controls, Data Center history template/ZIP controls, privacy warning, and live passed audit.
+- real browser QA: **passed** for the new navigation, League History empty state, exact 0/14 locked gate, absence of training controls, Data Center history template/ZIP controls, privacy warning, live passed audit, and the confirmation-protected local reset preview/dialog/cancel flow.
+
+The post-Phase 8 usability hardening adds a transactional **Restore app defaults** control. It removes only saved local setups and practice-draft state, requires the exact phrase `RESTORE DEFAULTS`, clears browser session state, and preserves immutable archives, canonical football data, ADP, identity decisions, models, and imported history. The confirmed preview is compared again inside the transaction, so a change from another browser tab aborts before deletion. Integration tests verify scoped deletion, stale-preview rejection, and idempotence. Live browser QA canceled before the destructive action and confirmed that the production setup, draft, and pick counts were unchanged.
 
 Local evidence is not presented as hosted GitHub Actions success.
 

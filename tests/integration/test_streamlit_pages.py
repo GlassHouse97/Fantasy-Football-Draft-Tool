@@ -34,6 +34,154 @@ def test_page_has_no_headless_exception(module: str, expected_title: str) -> Non
     assert expected_title in [title.value for title in app.title]
 
 
+def test_home_restore_defaults_previews_scoped_state_without_real_reset() -> None:
+    script = """
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import streamlit as st
+
+from fantasy_draft_ai.services.local_state import LocalStateSummary
+from fantasy_draft_ai.ui.pages.home import render
+
+summary = LocalStateSummary(
+    saved_league_setups=1,
+    practice_drafts=1,
+    recorded_picks=3,
+    draft_events=4,
+    frozen_player_rows=120,
+    recommendation_runs=2,
+)
+config = SimpleNamespace(
+    training=SimpleNamespace(start_season=2015, end_season=2025),
+    project=SimpleNamespace(prediction_season=2026),
+    paths=SimpleNamespace(warehouse=Path("ignored.duckdb")),
+    resolve=lambda path: Path("ignored.duckdb"),
+)
+context = SimpleNamespace(
+    config=config,
+    reference_rules=object(),
+    prepare_draft=lambda rules: SimpleNamespace(
+        readiness=SimpleNamespace(
+            unresolved_market_rows=0,
+            recommendation_ready=True,
+        )
+    ),
+    projection_board=SimpleNamespace(
+        available=True,
+        rows=(object(),),
+        run=None,
+        status=SimpleNamespace(message="Ready"),
+    ),
+    adp_market_board=SimpleNamespace(
+        status=SimpleNamespace(observation_rows=120, snapshot_count=1)
+    ),
+    setup_repository=SimpleNamespace(list=lambda: (object(),)),
+)
+if not st.session_state.get("home_feedback_seeded"):
+    st.session_state["app_reset_feedback"] = summary
+    st.session_state["home_feedback_seeded"] = True
+
+with (
+    patch(
+        "fantasy_draft_ai.ui.pages.home.load_app_context",
+        return_value=context,
+    ),
+    patch("fantasy_draft_ai.ui.pages.home.project_status", return_value=()),
+    patch(
+        "fantasy_draft_ai.ui.pages.home.preview_local_state",
+        return_value=summary,
+    ),
+    patch(
+        "fantasy_draft_ai.ui.pages.home.restore_phase8_defaults",
+        return_value=summary,
+    ),
+):
+    render()
+"""
+    app = AppTest.from_string(script, default_timeout=60).run()
+
+    assert len(app.exception) == 0
+    assert any(expander.label == "Local testing controls" for expander in app.expander)
+    assert any("1 saved league setup" in info.value for info in app.info)
+    assert any("App defaults restored" in success.value for success in app.success)
+
+    open_button = next(button for button in app.button if button.label == "Restore app defaults")
+    app = open_button.click().run()
+
+    assert len(app.exception) == 0
+    assert any("Raw source archives" in markdown.value for markdown in app.markdown)
+    confirm_button = next(
+        button for button in app.button if button.label == "Restore app defaults now"
+    )
+    assert confirm_button.disabled is True
+
+
+def test_home_restore_defaults_requires_exact_confirmation_and_uses_mocked_reset() -> None:
+    script = """
+from pathlib import Path
+from unittest.mock import patch
+
+from fantasy_draft_ai.services.local_state import LocalStateSummary
+from fantasy_draft_ai.ui.pages.home import _confirm_restore_defaults
+
+summary = LocalStateSummary(
+    saved_league_setups=1,
+    practice_drafts=1,
+    recorded_picks=3,
+    draft_events=4,
+    frozen_player_rows=120,
+    recommendation_runs=2,
+)
+
+with patch(
+    "fantasy_draft_ai.ui.pages.home.restore_phase8_defaults",
+    return_value=summary,
+):
+    _confirm_restore_defaults(Path("ignored.duckdb"), summary)
+"""
+    app = AppTest.from_string(script, default_timeout=60).run()
+
+    confirmation = next(
+        widget for widget in app.text_input if widget.label == "Type RESTORE DEFAULTS to continue"
+    )
+    app = confirmation.set_value("restore defaults").run()
+    confirm_button = next(
+        button for button in app.button if button.label == "Restore app defaults now"
+    )
+    assert confirm_button.disabled is True
+
+    confirmation = next(
+        widget for widget in app.text_input if widget.label == "Type RESTORE DEFAULTS to continue"
+    )
+    app = confirmation.set_value("RESTORE DEFAULTS").run()
+    confirm_button = next(
+        button for button in app.button if button.label == "Restore app defaults now"
+    )
+    assert confirm_button.disabled is False
+
+    app = confirm_button.click().run()
+
+    assert len(app.exception) == 0
+    feedback = app.session_state["app_reset_feedback"]
+    assert (
+        feedback.saved_league_setups,
+        feedback.practice_drafts,
+        feedback.recorded_picks,
+        feedback.draft_events,
+        feedback.frozen_player_rows,
+        feedback.recommendation_runs,
+    ) == (
+        1,
+        1,
+        3,
+        4,
+        120,
+        2,
+    )
+
+
 def test_league_history_page_renders_descriptions_and_a_locked_gate() -> None:
     script = """
 from datetime import UTC, datetime

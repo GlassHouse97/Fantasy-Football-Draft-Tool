@@ -2,13 +2,124 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import duckdb
 import streamlit as st
 
 from fantasy_draft_ai.services.league_setup import LeagueSetupIntegrityError
+from fantasy_draft_ai.services.local_state import (
+    LocalStateResetError,
+    LocalStateSummary,
+    preview_local_state,
+    restore_phase8_defaults,
+)
 from fantasy_draft_ai.services.status import project_status
 from fantasy_draft_ai.ui.common import render_method_legend, render_page_header
 from fantasy_draft_ai.ui.context import load_app_context
+
+_RESET_CONFIRMATION = "RESTORE DEFAULTS"
+
+
+def _count_label(count: int, singular: str) -> str:
+    """Return natural count copy for the reset preview."""
+
+    label = singular if count == 1 else f"{singular}s"
+    return f"{count:,} {label}"
+
+
+def _summary_message(summary: LocalStateSummary) -> str:
+    """Describe resettable state without hiding zero-count categories."""
+
+    return (
+        f"{_count_label(summary.saved_league_setups, 'saved league setup')}, "
+        f"{_count_label(summary.practice_drafts, 'practice draft')}, and "
+        f"{_count_label(summary.recorded_picks, 'recorded pick')}"
+    )
+
+
+@st.dialog("Restore app defaults")
+def _confirm_restore_defaults(warehouse_path: Path, summary: LocalStateSummary) -> None:
+    """Require an explicit phrase before removing local testing state."""
+
+    st.warning(
+        "This returns the interactive workspace to the checked-in Phase 8 defaults. "
+        "This action cannot be undone from inside the app."
+    )
+    st.write(f"The reset will remove **{_summary_message(summary)}**.")
+    st.markdown(
+        """
+        **Removed**
+
+        - Saved league setups
+        - Practice draft sessions, frozen player pools, recorded picks, and recommendations
+
+        **Preserved**
+
+        - Raw source archives and manifests
+        - Canonical player, weekly-stat, participation, and ADP data
+        - Projection models and published model artifacts
+        - Imported league history, outcomes, features, and identity decisions
+        """
+    )
+    st.caption(
+        f"The transaction also removes {_count_label(summary.draft_events, 'draft event row')}, "
+        f"{_count_label(summary.frozen_player_rows, 'frozen player row')}, and "
+        f"{_count_label(summary.recommendation_runs, 'recommendation run')}."
+    )
+    confirmation = st.text_input(
+        f"Type {_RESET_CONFIRMATION} to continue",
+        key="home_reset_confirmation",
+    )
+    if st.button(
+        "Restore app defaults now",
+        type="primary",
+        icon=":material/restart_alt:",
+        disabled=confirmation != _RESET_CONFIRMATION,
+        key="home_reset_confirm_button",
+    ):
+        try:
+            removed = restore_phase8_defaults(
+                warehouse_path,
+                expected_summary=summary,
+            )
+        except (duckdb.Error, OSError, LocalStateResetError) as exc:
+            st.error(f"App defaults were not restored: {exc}")
+            return
+        st.session_state.clear()
+        st.session_state["app_reset_feedback"] = removed
+        st.rerun()
+
+
+def _render_local_testing_controls(warehouse_path: Path) -> None:
+    """Render the intentionally collapsed reset entry point."""
+
+    with st.expander("Local testing controls"):
+        st.write(
+            "Use this only when you want to discard saved setup and practice-draft work "
+            "and return to the checked-in app defaults."
+        )
+        try:
+            summary = preview_local_state(warehouse_path)
+        except (duckdb.Error, OSError, LocalStateResetError) as exc:
+            st.error(f"Local testing state could not be verified: {exc}")
+            return
+        if summary.is_empty:
+            st.success("The interactive workspace is already using the app defaults.")
+            st.button(
+                "Restore app defaults",
+                icon=":material/restart_alt:",
+                disabled=True,
+                key="home_reset_open_button",
+            )
+            return
+        st.info(f"Currently resettable: {_summary_message(summary)}.")
+        if st.button(
+            "Restore app defaults",
+            icon=":material/restart_alt:",
+            key="home_reset_open_button",
+        ):
+            _confirm_restore_defaults(warehouse_path, summary)
 
 
 def render() -> None:
@@ -34,6 +145,9 @@ def render() -> None:
         "Project command center",
         "See what is ready, what is blocked, and the one most useful action to take next.",
     )
+    reset_feedback = st.session_state.pop("app_reset_feedback", None)
+    if isinstance(reset_feedback, LocalStateSummary):
+        st.success(f"App defaults restored. Removed {_summary_message(reset_feedback)}.")
 
     metric_one, metric_two = st.columns(2)
     metric_one.metric(
@@ -130,3 +244,4 @@ def render() -> None:
         "Championship probabilities are intentionally disabled. The repository does not have "
         "enough uploaded league histories to support that claim."
     )
+    _render_local_testing_controls(context.config.resolve(context.config.paths.warehouse))
