@@ -14,7 +14,7 @@ from typing import Any
 import duckdb
 
 from fantasy_draft_ai.config import AppConfig
-from fantasy_draft_ai.data.warehouse import Warehouse
+from fantasy_draft_ai.data.warehouse import Warehouse, invalidate_player_projection_runs
 from fantasy_draft_ai.features.player_seasons import FEATURE_VERSION
 from fantasy_draft_ai.models.evaluation.splits import expanding_season_splits
 from fantasy_draft_ai.rules.models import LeagueRules
@@ -830,6 +830,11 @@ def _commit_predictions(
             actual = connection.execute("SELECT count(*) FROM baseline_predictions").fetchone()
             if actual is None or int(actual[0]) != len(predictions):
                 raise RuntimeError("Baseline prediction row accounting failed.")
+            invalidate_player_projection_runs(
+                connection,
+                build_fingerprint=build_fingerprint,
+                baseline_report_fingerprint=report_fingerprint,
+            )
             connection.execute("COMMIT")
         except Exception:
             connection.execute("ROLLBACK")

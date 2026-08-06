@@ -312,6 +312,50 @@ def evaluate_baselines_command(
         raise typer.Exit(code=2)
 
 
+@models_app.command("train-player-models")
+def train_player_models_command(
+    rules_path: Annotated[
+        Path,
+        typer.Option("--rules", help="Rules used by the frozen Phase 3 feature build."),
+    ] = Path("configs/example_ppr_12_team.yaml"),
+    validation_start_season: Annotated[
+        int,
+        typer.Option("--validation-start-season", min=2000),
+    ] = 2020,
+    test_season: Annotated[
+        int,
+        typer.Option("--test-season", min=2000),
+    ] = 2025,
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="Tracked Markdown evaluation report path."),
+    ] = Path("docs/PHASE_4_MODEL_EVALUATION.md"),
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Retrain an otherwise current deterministic run."),
+    ] = False,
+) -> None:
+    """Train Ridge/HGB models, select champions, and build the live board."""
+
+    # Keep optional pandas/scikit-learn imports out of non-model CLI commands.
+    from fantasy_draft_ai.models.player_projection.train import (
+        train_player_projection_models,
+    )
+
+    result = train_player_projection_models(
+        load_config(),
+        _load_rules(rules_path),
+        validation_start_season=validation_start_season,
+        test_season=test_season,
+        report_markdown_path=output,
+        report_json_path=output.with_suffix(".json"),
+        force=force,
+    )
+    typer.echo(result.render())
+    if not result.committed and not result.reused:
+        raise typer.Exit(code=2)
+
+
 @app.command("app")
 def app_command() -> None:
     """Start the local Streamlit application."""

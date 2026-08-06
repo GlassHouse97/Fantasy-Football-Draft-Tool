@@ -1,0 +1,160 @@
+---
+title: "Model Comparison and Calibration"
+format: html
+execute:
+  echo: true
+  warning: false
+---
+
+## Question and boundary
+
+- **Question:** Which stored candidate won validation, how did the frozen test behave, and are its intervals empirically calibrated?
+- **Data:** Canonical baseline predictions and Phase 4 learned predictions, champions, and interval fields.
+- **Unit:** One player-season prediction by candidate and target.
+- **Target:** Fantasy points per active game, games active, or total fantasy points.
+- **Cutoff:** Every stored `training_max_season` must precede its prediction season.
+- **Validation:** Pool 2020-2024 to select; display 2025 only after selection.
+- **Caveat:** This is an independent read-only summary. The Python report and warehouse champion records are authoritative.
+
+```{r}
+library(DBI)
+library(dplyr)
+library(duckdb)
+library(ggplot2)
+library(knitr)
+library(tibble)
+
+find_project_root <- function(start = getwd()) {
+  candidate <- normalizePath(start, winslash = "/", mustWork = TRUE)
+  repeat {
+    if (file.exists(file.path(candidate, "pyproject.toml"))) return(candidate)
+    parent <- dirname(candidate)
+    if (identical(parent, candidate)) stop("Could not find the repository root.")
+    candidate <- parent
+  }
+}
+
+warehouse_path <- file.path(
+  find_project_root(), "data", "warehouse", "fantasy_football.duckdb"
+)
+warehouse_ready <- file.exists(warehouse_path)
+learned <- tibble(
+  player_id = character(), prediction_season = integer(), position = character(),
+  target_name = character(), candidate_source = character(), candidate_name = character(),
+  predicted_value = double(), actual_value = double(), p10 = double(), p50 = double(),
+  p90 = double(), fold_label = character(), training_max_season = integer()
+)
+baselines <- tibble(
+  player_id = character(), prediction_season = integer(), position = character(),
+  target_name = character(), candidate_source = character(), candidate_name = character(),
+  predicted_value = double(), actual_value = double(), fold_label = character()
+)
+champions <- tibble()
+```
+
+```{r}
+if (warehouse_ready) {
+  con <- dbConnect(duckdb::duckdb(), dbdir = warehouse_path, read_only = TRUE)
+  tables <- dbListTables(con)
+  if ("player_projection_predictions" %in% tables) {
+    learned <- dbGetQuery(con, "
+      SELECT
+        player_id, prediction_season, position, target_name,
+        'learned' AS candidate_source, model_family AS candidate_name,
+        predicted_value, actual_value, p10, p50, p90, fold_label,
+        training_max_season
+      FROM player_projection_predictions
+      WHERE actual_value IS NOT NULL
+    ") |> as_tibble()
+  }
+  if ("baseline_predictions" %in% tables) {
+    baselines <- dbGetQuery(con, "
+      SELECT
+        player_id, prediction_season, position, target_name,
+        'baseline' AS candidate_source, baseline_name AS candidate_name,
+        predicted_value, actual_value,
+        CASE WHEN prediction_season = 2025 THEN 'test' ELSE 'validation' END AS fold_label
+      FROM baseline_predictions
+      WHERE actual_value IS NOT NULL AND prediction_season BETWEEN 2020 AND 2025
+    ") |> as_tibble()
+  }
+  if ("player_projection_champions" %in% tables) {
+    champions <- dbGetQuery(con, "
+      SELECT * FROM player_projection_champions
+      ORDER BY position, target_name
+    ") |> as_tibble()
+  }
+}
+```
+
+```{r}
+candidates <- bind_rows(
+  learned |> select(
+    player_id, prediction_season, position, target_name,
+    candidate_source, candidate_name, predicted_value, actual_value, fold_label
+  ),
+  baselines
+)
+
+candidate_metrics <- candidates |>
+  mutate(period = if_else(prediction_season == 2025, "test_2025", "validation_2020_2024")) |>
+  filter(prediction_season %in% 2020:2025) |>
+  group_by(position, target_name, candidate_source, candidate_name, period) |>
+  summarise(
+    rows = n(),
+    mae = mean(abs(predicted_value - actual_value)),
+    rmse = sqrt(mean((predicted_value - actual_value)^2)),
+    .groups = "drop"
+  )
+
+if (nrow(candidate_metrics) > 0) {
+  kable(candidate_metrics)
+} else {
+  cat("No matched Phase 4 candidate outputs exist yet; run Python model training first.\n")
+}
+```
+
+```{r}
+if (nrow(champions) > 0) {
+  kable(champions)
+} else {
+  cat("No persisted champion records are available.\n")
+}
+```
+
+```{r}
+calibration <- learned |>
+  filter(!is.na(p10), !is.na(p50), !is.na(p90)) |>
+  group_by(position, target_name, candidate_name, fold_label) |>
+  summarise(
+    rows = n(),
+    coverage_p10_p90 = mean(actual_value >= p10 & actual_value <= p90),
+    mean_width_p10_p90 = mean(p90 - p10),
+    pinball_p10 = mean(pmax(0.10 * (actual_value - p10), -0.90 * (actual_value - p10))),
+    pinball_p50 = mean(pmax(0.50 * (actual_value - p50), -0.50 * (actual_value - p50))),
+    pinball_p90 = mean(pmax(0.90 * (actual_value - p90), -0.10 * (actual_value - p90))),
+    .groups = "drop"
+  )
+
+if (nrow(calibration) > 0) {
+  kable(calibration)
+  ggplot(calibration, aes(mean_width_p10_p90, coverage_p10_p90, color = position)) +
+    geom_point() +
+    geom_hline(yintercept = 0.80, linetype = "dashed") +
+    labs(
+      title = "Empirical interval coverage versus width",
+      x = "Mean P10-P90 width",
+      y = "Observed coverage",
+      color = "Position"
+    ) +
+    theme_minimal()
+} else {
+  cat("No evaluable Phase 4 intervals are available.\n")
+}
+```
+
+```{r}
+if (exists("con")) dbDisconnect(con, shutdown = TRUE)
+```
+
+Do not promote a different candidate because its 2025 row looks better. On validation, lower learned MAE is still insufficient when the paired-bootstrap learned-minus-baseline interval crosses zero; that result is inconclusive and retains the baseline. Also inspect segment counts: an apparently strong metric on a small or mismatched sample is not a fair champion comparison.

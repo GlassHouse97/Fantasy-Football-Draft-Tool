@@ -1,0 +1,122 @@
+---
+title: "Regularized Regression Companion"
+format: html
+execute:
+  echo: true
+  warning: false
+---
+
+## Question and boundary
+
+- **Question:** How does Ridge regularization stabilize a small position-specific player model?
+- **Data:** Reviewed fields from canonical `player_season_features` joined to `player_season_targets`.
+- **Unit:** One non-rookie WR and prediction season.
+- **Target:** Next-season fantasy points per active game.
+- **Cutoff:** Each feature payload stops before its prediction season.
+- **Validation:** Tune on 2024 using only earlier prediction seasons; do not use 2025 to choose a penalty.
+- **Caveat:** This reduced R example is educational and never replaces the production Python pipeline or champion decision.
+
+```{r}
+library(DBI)
+library(dplyr)
+library(duckdb)
+library(ggplot2)
+library(knitr)
+library(parsnip)
+library(purrr)
+library(recipes)
+library(tibble)
+library(workflows)
+library(yardstick)
+
+find_project_root <- function(start = getwd()) {
+  candidate <- normalizePath(start, winslash = "/", mustWork = TRUE)
+  repeat {
+    if (file.exists(file.path(candidate, "pyproject.toml"))) return(candidate)
+    parent <- dirname(candidate)
+    if (identical(parent, candidate)) stop("Could not find the repository root.")
+    candidate <- parent
+  }
+}
+
+warehouse_path <- file.path(
+  find_project_root(), "data", "warehouse", "fantasy_football.duckdb"
+)
+warehouse_ready <- file.exists(warehouse_path)
+```
+
+```{r}
+model_rows <- tibble()
+if (warehouse_ready) {
+  con <- dbConnect(duckdb::duckdb(), dbdir = warehouse_path, read_only = TRUE)
+  tables <- dbListTables(con)
+  if (all(c("player_season_features", "player_season_targets") %in% tables)) {
+    model_rows <- dbGetQuery(con, "
+      SELECT
+        f.player_id,
+        f.prediction_season,
+        CAST(json_extract(f.feature_payload, '$.age_at_cutoff') AS DOUBLE) AS age_at_cutoff,
+        CAST(json_extract(f.feature_payload, '$.weighted_3yr_fantasy_points_per_game') AS DOUBLE)
+          AS weighted_3yr_fantasy_points_per_game,
+        CAST(json_extract(f.feature_payload, '$.weighted_3yr_targets_per_game') AS DOUBLE)
+          AS weighted_3yr_targets_per_game,
+        CAST(json_extract(f.feature_payload, '$.history_seasons') AS DOUBLE) AS history_seasons,
+        CAST(json_extract(t.target_payload, '$.fantasy_points_per_game') AS DOUBLE)
+          AS fantasy_points_per_game
+      FROM player_season_features AS f
+      JOIN player_season_targets AS t USING (player_id, prediction_season)
+      WHERE f.position = 'WR'
+        AND NOT CAST(json_extract(f.feature_payload, '$.is_rookie') AS BOOLEAN)
+        AND json_extract(t.target_payload, '$.fantasy_points_per_game') IS NOT NULL
+        AND f.prediction_season <= 2024
+      ORDER BY f.prediction_season, f.player_id
+    ") |> as_tibble()
+  }
+}
+
+if (nrow(model_rows) == 0) {
+  cat("No eligible canonical rows are available; run the Python Phase 3 build first.\n")
+} else {
+  model_rows |> count(prediction_season) |> kable()
+}
+```
+
+```{r}
+ridge_results <- tibble()
+if (nrow(model_rows) > 0 && any(model_rows$prediction_season == 2024)) {
+  training <- model_rows |> filter(prediction_season < 2024)
+  validation <- model_rows |> filter(prediction_season == 2024)
+
+  ridge_recipe <- recipe(
+    fantasy_points_per_game ~ age_at_cutoff +
+      weighted_3yr_fantasy_points_per_game +
+      weighted_3yr_targets_per_game + history_seasons,
+    data = training
+  ) |>
+    step_impute_median(all_numeric_predictors()) |>
+    step_normalize(all_numeric_predictors())
+
+  penalties <- c(0.1, 1.0, 10.0)
+  ridge_results <- map_dfr(penalties, function(value) {
+    specification <- linear_reg(penalty = value, mixture = 0) |>
+      set_engine("glmnet")
+    fitted <- workflow() |>
+      add_recipe(ridge_recipe) |>
+      add_model(specification) |>
+      fit(training)
+    predictions <- predict(fitted, validation) |>
+      bind_cols(validation |> select(fantasy_points_per_game))
+    mae(predictions, truth = fantasy_points_per_game, estimate = .pred) |>
+      mutate(penalty = value)
+  })
+  kable(ridge_results |> arrange(.estimate))
+} else {
+  cat("A 2024 validation slice is required for this educational fit.\n")
+}
+```
+
+```{r}
+if (exists("con")) dbDisconnect(con, shutdown = TRUE)
+```
+
+The table above is not the production result: it uses a deliberately small predictor subset to make the penalty visible. Production Python uses the complete locked feature contract, nested expanding folds, three targets, four positions, stored lineage, and matched baseline comparison.

@@ -1,0 +1,103 @@
+---
+title: "Phase 4 Data Exploration"
+format: html
+execute:
+  echo: true
+  warning: false
+---
+
+## Question and boundary
+
+- **Question:** What cutoff-safe player-season rows and Phase 4 outputs are available in the canonical warehouse?
+- **Data:** The same local DuckDB tables used by Python.
+- **Unit:** One player and prediction season for features and targets; one candidate model prediction for evaluation.
+- **Target:** Next-season fantasy points per active game, games active, or total fantasy points.
+- **Cutoff:** Features for prediction season `s` stop before season `s` begins.
+- **Validation:** This document audits stored rows; it does not select a model.
+- **Caveat:** R is an optional read-only companion. Missing outputs are reported, not synthesized.
+
+```{r}
+library(DBI)
+library(dplyr)
+library(duckdb)
+library(ggplot2)
+library(knitr)
+library(tibble)
+
+find_project_root <- function(start = getwd()) {
+  candidate <- normalizePath(start, winslash = "/", mustWork = TRUE)
+  repeat {
+    if (file.exists(file.path(candidate, "pyproject.toml"))) return(candidate)
+    parent <- dirname(candidate)
+    if (identical(parent, candidate)) stop("Could not find the repository root.")
+    candidate <- parent
+  }
+}
+
+project_root <- find_project_root()
+warehouse_path <- file.path(project_root, "data", "warehouse", "fantasy_football.duckdb")
+warehouse_ready <- file.exists(warehouse_path)
+cat("Warehouse:", if (warehouse_ready) "found" else "not found", "\n")
+```
+
+```{r}
+if (warehouse_ready) {
+  con <- dbConnect(duckdb::duckdb(), dbdir = warehouse_path, read_only = TRUE)
+  tables <- dbListTables(con)
+  required <- c(
+    "player_season_features", "player_season_targets", "baseline_predictions",
+    "player_projection_runs", "player_projection_models",
+    "player_projection_predictions", "player_projection_champions",
+    "player_projection_board"
+  )
+  table_audit <- tibble(
+    table = required,
+    available = required %in% tables,
+    rows = vapply(required, function(table_name) {
+      if (!table_name %in% tables) return(NA_real_)
+      as.numeric(dbGetQuery(con, paste0("SELECT count(*) AS rows FROM ", table_name))$rows[[1]])
+    }, numeric(1))
+  )
+  kable(table_audit)
+} else {
+  cat("Initialize and build the canonical warehouse before running this audit.\n")
+}
+```
+
+```{r}
+if (warehouse_ready && all(c("player_season_features", "player_season_targets") %in% tables)) {
+  coverage <- dbGetQuery(con, "
+    SELECT
+      f.prediction_season,
+      f.position,
+      count(*) AS feature_rows,
+      count(t.player_id) AS target_rows,
+      count(*) FILTER (
+        WHERE CAST(json_extract(f.feature_payload, '$.is_rookie') AS BOOLEAN)
+      ) AS rookie_feature_rows
+    FROM player_season_features AS f
+    LEFT JOIN player_season_targets AS t
+      USING (player_id, prediction_season)
+    GROUP BY f.prediction_season, f.position
+    ORDER BY f.prediction_season, f.position
+  ")
+  kable(tail(coverage, 24))
+
+  ggplot(coverage, aes(prediction_season, feature_rows, color = position)) +
+    geom_line() +
+    geom_point() +
+    labs(
+      title = "Cutoff-safe feature rows by prediction season",
+      x = "Prediction season",
+      y = "Feature rows",
+      color = "Position"
+    ) +
+    theme_minimal()
+}
+```
+
+```{r}
+if (warehouse_ready) dbDisconnect(con, shutdown = TRUE)
+```
+
+The rookie column is a coverage diagnostic, not proof that historical rookie rows are safe for learned training. The Python feature audit and model status remain authoritative.

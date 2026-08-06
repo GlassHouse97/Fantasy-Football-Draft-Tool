@@ -9,6 +9,10 @@ from pathlib import Path
 import duckdb
 
 from fantasy_draft_ai.config import AppConfig
+from fantasy_draft_ai.services.projections import (
+    ProjectionBoardStatus,
+    projection_board_status,
+)
 
 
 @dataclass(frozen=True)
@@ -18,7 +22,11 @@ class StatusItem:
     available: bool
 
 
-def project_status(config: AppConfig) -> list[StatusItem]:
+def project_status(
+    config: AppConfig,
+    *,
+    phase4_status: ProjectionBoardStatus | None = None,
+) -> list[StatusItem]:
     raw_root = config.resolve(config.paths.raw_dir)
     ffc_files = sorted((raw_root / "ffc_adp").glob("*.json"))
     espn_files = sorted((raw_root / "espn_manual").glob("*.csv"))
@@ -38,6 +46,11 @@ def project_status(config: AppConfig) -> list[StatusItem]:
     feature_available = False
     baseline_status = "not evaluated; run fantasy-draft models evaluate-baselines"
     baseline_available = False
+    current_phase4_status = phase4_status or ProjectionBoardStatus(
+        available=False,
+        code="not_built",
+        message="not built; train and validate Phase 4 first",
+    )
     if warehouse.exists():
         counts = None
         feature_counts = None
@@ -219,6 +232,26 @@ def project_status(config: AppConfig) -> list[StatusItem]:
         except duckdb.Error:
             pass
 
+    if warehouse.exists():
+        current_phase4_status = phase4_status or projection_board_status(config)
+        if current_phase4_status.available and not (feature_available and baseline_available):
+            current_phase4_status = ProjectionBoardStatus(
+                available=False,
+                code="stale",
+                message="Phase 4 exists, but its Phase 3 prerequisites no longer validate",
+                run=current_phase4_status.run,
+            )
+
+    model_status = current_phase4_status.message
+    board_status = current_phase4_status.message
+    if current_phase4_status.available and current_phase4_status.run is not None:
+        run = current_phase4_status.run
+        model_status = (
+            f"complete run {run.run_id[:12]}; {run.model_rows} registered models; "
+            "active Phase 3 lineage verified"
+        )
+        board_status = current_phase4_status.message
+
     return [
         StatusItem(
             "Warehouse",
@@ -245,11 +278,11 @@ def project_status(config: AppConfig) -> list[StatusItem]:
         StatusItem("Scoring and rules engine", "available (configured logic)", True),
         StatusItem("Player-season features", feature_status, feature_available),
         StatusItem("Transparent projection baselines", baseline_status, baseline_available),
-        StatusItem("Player projection model", "not trained", False),
+        StatusItem("Player projection model", model_status, current_phase4_status.available),
         StatusItem(
             "Learned 2026 projection board",
-            "not built; transparent baselines are reported separately",
-            False,
+            board_status,
+            current_phase4_status.available,
         ),
         StatusItem("ADP movement model", "insufficient dated snapshots", False),
         StatusItem("Historical league outcome model", "insufficient uploaded histories", False),

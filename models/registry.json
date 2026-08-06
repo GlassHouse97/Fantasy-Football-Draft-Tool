@@ -1,4 +1,395 @@
 {
-  "models": [],
-  "notes": "No trained production models are available yet."
+  "active_run_id": "phase4-7ae8e9aed04bffca00c0",
+  "authority": "DuckDB and the registered run-scoped hash are authoritative; unregistered copies are convenience mirrors.",
+  "champions": [
+    {
+      "decision_status": "learned_regression_baseline_retained",
+      "learned_improvement_status": "regression",
+      "position": "QB",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 4.230084420689638,
+      "selected_name": "age_position_adjusted",
+      "selected_source": "baseline",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 4.230084420689638,
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "decision_status": "learned_significant_improvement_selected",
+      "learned_improvement_status": "statistically_clear",
+      "position": "QB",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 51.33884157485295,
+      "selected_name": "hist_gradient_boosting",
+      "selected_source": "learned",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 41.20860389333247,
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "decision_status": "learned_significant_improvement_selected",
+      "learned_improvement_status": "statistically_clear",
+      "position": "QB",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 4.090636563446106,
+      "selected_name": "ridge",
+      "selected_source": "learned",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 2.4652391334952553,
+      "target_name": "games_active"
+    },
+    {
+      "decision_status": "learned_regression_baseline_retained",
+      "learned_improvement_status": "regression",
+      "position": "RB",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 2.636953895457805,
+      "selected_name": "age_position_adjusted",
+      "selected_source": "baseline",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 2.636953895457805,
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "decision_status": "learned_significant_improvement_selected",
+      "learned_improvement_status": "statistically_clear",
+      "position": "RB",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 34.55890144937727,
+      "selected_name": "hist_gradient_boosting",
+      "selected_source": "learned",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 23.216781530895723,
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "decision_status": "learned_significant_improvement_selected",
+      "learned_improvement_status": "statistically_clear",
+      "position": "RB",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 6.17815771585848,
+      "selected_name": "hist_gradient_boosting",
+      "selected_source": "learned",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 3.0062002539299355,
+      "target_name": "games_active"
+    },
+    {
+      "decision_status": "learned_regression_baseline_retained",
+      "learned_improvement_status": "regression",
+      "position": "TE",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 1.7687824001151096,
+      "selected_name": "age_position_adjusted",
+      "selected_source": "baseline",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 1.7687824001151096,
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "decision_status": "learned_significant_improvement_selected",
+      "learned_improvement_status": "statistically_clear",
+      "position": "TE",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 23.68614780792545,
+      "selected_name": "hist_gradient_boosting",
+      "selected_source": "learned",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 16.398392683579086,
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "decision_status": "learned_significant_improvement_selected",
+      "learned_improvement_status": "statistically_clear",
+      "position": "TE",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 6.285612590577616,
+      "selected_name": "hist_gradient_boosting",
+      "selected_source": "learned",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 3.252152007104269,
+      "target_name": "games_active"
+    },
+    {
+      "decision_status": "learned_significant_improvement_selected",
+      "learned_improvement_status": "statistically_clear",
+      "position": "WR",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 2.509520957401467,
+      "selected_name": "hist_gradient_boosting",
+      "selected_source": "learned",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 2.367930773726267,
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "decision_status": "learned_significant_improvement_selected",
+      "learned_improvement_status": "statistically_clear",
+      "position": "WR",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 32.93224710070325,
+      "selected_name": "hist_gradient_boosting",
+      "selected_source": "learned",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 21.523708175125215,
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "decision_status": "learned_significant_improvement_selected",
+      "learned_improvement_status": "statistically_clear",
+      "position": "WR",
+      "reference_baseline_name": "age_position_adjusted",
+      "reference_baseline_value": 5.93888064590859,
+      "selected_name": "hist_gradient_boosting",
+      "selected_source": "learned",
+      "selection_metric": "pooled_validation_mae",
+      "selection_value": 2.9177447114825092,
+      "target_name": "games_active"
+    }
+  ],
+  "evaluation_report_fingerprint": "00ffb3d0c6bf51c4bed9a9556dec479749a0b7abcf829deab1e2e14a565978a5",
+  "models": [
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/QB/games_active/hist_gradient_boosting.joblib",
+      "artifact_sha256": "d623bc75fb3a6b411f2476c1756af9f0c8a0531b45ae95e702eef7f141610da7",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-qb-games-hgb.md",
+      "model_card_sha256": "9fbecdaacf312990c667566941263a0abc6e6ab52041c246e02adbe9460e1d6a",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-qb-games-hgb",
+      "position": "QB",
+      "target_name": "games_active"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/QB/games_active/ridge.joblib",
+      "artifact_sha256": "fcaf395770d7cadb92327ac97666640d1ca3deccb3a80b5a491ee2a635a3ae00",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-qb-games-ridge.md",
+      "model_card_sha256": "30f1a25432cf1048efebe8715bffe554f083cbfeab85edfb857a4ad2130cb66e",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-qb-games-ridge",
+      "position": "QB",
+      "target_name": "games_active"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/QB/fantasy_points_per_game/hist_gradient_boosting.joblib",
+      "artifact_sha256": "56c53b99e49a9a24780ade4a8f7db2de6431f9c0c965affa5b5285b007be0486",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-qb-ppg-hgb.md",
+      "model_card_sha256": "8f7330a2bd00b3d39b47cb373aaccf25e6c4521fa4bf7f89fab8defbb3633207",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-qb-ppg-hgb",
+      "position": "QB",
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/QB/fantasy_points_per_game/ridge.joblib",
+      "artifact_sha256": "5aa07ce66ea3f00eddc152dba3e691573bc37523962c69e8199f6c11f4f01176",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-qb-ppg-ridge.md",
+      "model_card_sha256": "143413d6ace10b586f1e9eeba12099084bd0ba5aafb48adbbd946ffad1a29e61",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-qb-ppg-ridge",
+      "position": "QB",
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/QB/fantasy_points_total/hist_gradient_boosting.joblib",
+      "artifact_sha256": "4a7cd77bffc46de7956141c318b61b8e368f432edb39bbc35f74002a94fac8fc",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-qb-total-hgb.md",
+      "model_card_sha256": "c54683b23f192f59591febb724a815186aa508920ba8f30c67a23c16e0fb4e7b",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-qb-total-hgb",
+      "position": "QB",
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/QB/fantasy_points_total/ridge.joblib",
+      "artifact_sha256": "ae127e07ba4a343eb0d8d8497143879a44cd4023bc9fe8c30bdaca9a2260def0",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-qb-total-ridge.md",
+      "model_card_sha256": "38b69ee40c4af7ed0faacff4a037aa78b5fdca3d637006f53179deece12806d2",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-qb-total-ridge",
+      "position": "QB",
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/RB/games_active/hist_gradient_boosting.joblib",
+      "artifact_sha256": "51610cb907de21b59954c1ed3302a4c6ec815b78f7c557392fb93ffbcffe0267",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-rb-games-hgb.md",
+      "model_card_sha256": "1bdebfbd95a82d9e3f880e54486e9be76748ddc58555ba1401cd64f91bf3df1b",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-rb-games-hgb",
+      "position": "RB",
+      "target_name": "games_active"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/RB/games_active/ridge.joblib",
+      "artifact_sha256": "c6886aca5df0ab08315d29a86184e8eab88545ddaf9370a355b4abfdb2f958e1",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-rb-games-ridge.md",
+      "model_card_sha256": "9bb47f1eb40e89afbeaeef58eaa5e00fc917cb0c3472b5b9e03b5fd6d2c6fbc2",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-rb-games-ridge",
+      "position": "RB",
+      "target_name": "games_active"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/RB/fantasy_points_per_game/hist_gradient_boosting.joblib",
+      "artifact_sha256": "c27fe57b015ecb6c09955ea4f034a09dd4d74f0ec1073bf8fb041599f5adcb0a",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-rb-ppg-hgb.md",
+      "model_card_sha256": "eeccfcc2561cac9687f3c2520c0e814c5f3120f461ce46a41e638086de3f438e",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-rb-ppg-hgb",
+      "position": "RB",
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/RB/fantasy_points_per_game/ridge.joblib",
+      "artifact_sha256": "dfbfe399c802996cc29386b92aea55a88e46e2909f0db1db047eb8085f1f47b1",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-rb-ppg-ridge.md",
+      "model_card_sha256": "b1b2005751cc94526f5da16a0d8ef5e638bf5404830e47ad807163ac8e111dc3",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-rb-ppg-ridge",
+      "position": "RB",
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/RB/fantasy_points_total/hist_gradient_boosting.joblib",
+      "artifact_sha256": "1d8bdcabe0fa059ba68ab50b707da2798d47664f19b73372437bf9bbf74e5290",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-rb-total-hgb.md",
+      "model_card_sha256": "01781f0de398daaea787134e9d910fbf5ac29657e3cb14883eddaf90e6d415e4",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-rb-total-hgb",
+      "position": "RB",
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/RB/fantasy_points_total/ridge.joblib",
+      "artifact_sha256": "eede72f5482ca8c2b6ed9bd81c9f9d61fc6b6aaa21074cef934a165ce856e7b5",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-rb-total-ridge.md",
+      "model_card_sha256": "3fb64b0499d319f72de5649ac662d85abd409257a1594a1da72fd20d499f4171",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-rb-total-ridge",
+      "position": "RB",
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/TE/games_active/hist_gradient_boosting.joblib",
+      "artifact_sha256": "9d9572eae316b768a170b077f5fd884f0b565815a78f5b24af48f582d9f071fc",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-te-games-hgb.md",
+      "model_card_sha256": "de09c3ad2686c15ee7f91806c821d990c33bac334da3ee3b2f552a0a778ec86a",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-te-games-hgb",
+      "position": "TE",
+      "target_name": "games_active"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/TE/games_active/ridge.joblib",
+      "artifact_sha256": "a3bb6e5d68f20ee741388aaabb6c6a282353b93596129545fa5794e877b5da98",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-te-games-ridge.md",
+      "model_card_sha256": "b373475aa77b6ebc32f8e9f808939fb2fabed5dc018848f12a4591cc6a6e5f52",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-te-games-ridge",
+      "position": "TE",
+      "target_name": "games_active"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/TE/fantasy_points_per_game/hist_gradient_boosting.joblib",
+      "artifact_sha256": "b765ba1f346f7f36c406b2d781a06d51fa5f7c628993d6b75a80bb62cee6b678",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-te-ppg-hgb.md",
+      "model_card_sha256": "c6c2dc5f833b797bf861c5d2d9e3f4d0a86bcc939742c01e0645ff65070546bf",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-te-ppg-hgb",
+      "position": "TE",
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/TE/fantasy_points_per_game/ridge.joblib",
+      "artifact_sha256": "4f9af8f15299d0698ce35fd7ced04cda78115739c5e1fa4ec1d2a650ba24191b",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-te-ppg-ridge.md",
+      "model_card_sha256": "e46387c3670fb0618c1b2acb447ee54f1630313c5f7272177b85d7ac800b908b",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-te-ppg-ridge",
+      "position": "TE",
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/TE/fantasy_points_total/hist_gradient_boosting.joblib",
+      "artifact_sha256": "1600f9f998ecb07e2648c126c9206faa952022aaa6e2582200d64961bf934510",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-te-total-hgb.md",
+      "model_card_sha256": "a35ab5242c1dcdee84eae7369855d1a97911cfca97f35299d45f0092b324d173",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-te-total-hgb",
+      "position": "TE",
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/TE/fantasy_points_total/ridge.joblib",
+      "artifact_sha256": "a9e3d988fb6e4eb0e25f86169dddae42a33bd2cb7fcce58a0a8dfef89ebccad2",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-te-total-ridge.md",
+      "model_card_sha256": "1ca7a72837cc8f669ca9e1a9db2e44ba4d8cf1d75c1003215c945a1b21af507f",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-te-total-ridge",
+      "position": "TE",
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/WR/games_active/hist_gradient_boosting.joblib",
+      "artifact_sha256": "91c085399b4db831eae32f27b1dfb356fc2168cb262bfdab718c52dcacdad3ba",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-wr-games-hgb.md",
+      "model_card_sha256": "59c89ff4768156fdd8231e881db81ad072375b18243b52cde0d494c1a5ec1d6f",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-wr-games-hgb",
+      "position": "WR",
+      "target_name": "games_active"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/WR/games_active/ridge.joblib",
+      "artifact_sha256": "1bb45fe2a96f61f01f5b60c98634244d57e7fb03f1c842f07cc27c36674c3c64",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-wr-games-ridge.md",
+      "model_card_sha256": "3dfa6aa07eb4171f2d30a89d3f3757a692346b546e720e18f16da2bd83c8b745",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-wr-games-ridge",
+      "position": "WR",
+      "target_name": "games_active"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/WR/fantasy_points_per_game/hist_gradient_boosting.joblib",
+      "artifact_sha256": "4f6387ad354d7823d5a26d2ec278f32f5877c76fb85ab0beb64be96870802529",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-wr-ppg-hgb.md",
+      "model_card_sha256": "f9b7cfbcca792863641198792c4c07250b0750021412588e508beb597720ed2d",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-wr-ppg-hgb",
+      "position": "WR",
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/WR/fantasy_points_per_game/ridge.joblib",
+      "artifact_sha256": "fef87df318cb6429f6728b2d19c85ff847ac4449ac3e6f75c695c4a02809ec65",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-wr-ppg-ridge.md",
+      "model_card_sha256": "d568eba47cb9b88814b2276e90d6408767ecd159bc435f638844900bbaaaada4",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-wr-ppg-ridge",
+      "position": "WR",
+      "target_name": "fantasy_points_per_game"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/WR/fantasy_points_total/hist_gradient_boosting.joblib",
+      "artifact_sha256": "11a05026d5689d4c85d8008a0596131ac6a9c2b13e895e931f2540f76a4e5d16",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-wr-total-hgb.md",
+      "model_card_sha256": "edf82e28910fe6289274fe4d76a38339c6b4a30b8c5f1634ec673561758a1ffd",
+      "model_family": "hist_gradient_boosting",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-wr-total-hgb",
+      "position": "WR",
+      "target_name": "fantasy_points_total"
+    },
+    {
+      "artifact_path": "models/artifacts/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/WR/fantasy_points_total/ridge.joblib",
+      "artifact_sha256": "2804b639c6d6930b0a2025febd1320583943d2e32f38f53720d57aedfdda0ef1",
+      "model_card_path": "docs/model_cards/phase4/phase4-7ae8e9aed04bffca00c0/attempt-866987f75a2c406693cf892d49adc975/phase4-7ae8e9aed04bffca00c0-wr-total-ridge.md",
+      "model_card_sha256": "9dc6193cc061a1a8b4c579f82924df73ebe45f8870a45961d54bbfd7b92b152b",
+      "model_family": "ridge",
+      "model_id": "phase4-7ae8e9aed04bffca00c0-wr-total-ridge",
+      "position": "WR",
+      "target_name": "fantasy_points_total"
+    }
+  ],
+  "publication_id": "attempt-866987f75a2c406693cf892d49adc975",
+  "schema_version": "1.0"
 }

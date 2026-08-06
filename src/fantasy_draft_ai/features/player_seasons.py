@@ -15,7 +15,7 @@ from typing import Any
 import duckdb
 
 from fantasy_draft_ai.config import AppConfig
-from fantasy_draft_ai.data.warehouse import Warehouse
+from fantasy_draft_ai.data.warehouse import Warehouse, invalidate_player_projection_runs
 from fantasy_draft_ai.rules.models import LeagueRules
 from fantasy_draft_ai.schemas.quality import QualityIssue, Severity
 from fantasy_draft_ai.scoring.engine import PlayerStatLine, score_player
@@ -306,9 +306,7 @@ def build_player_season_features(
         live_rows_without_targets=build_metrics["live_rows_without_targets"],
         rookie_rows=build_metrics["rookie_rows"],
         sparse_history_rows=build_metrics["sparse_history_rows"],
-        cutoff_safe_static_position_rows=build_metrics[
-            "cutoff_safe_static_position_rows"
-        ],
+        cutoff_safe_static_position_rows=build_metrics["cutoff_safe_static_position_rows"],
         candidates_missing_cutoff_safe_position=build_metrics[
             "candidates_missing_cutoff_safe_position"
         ],
@@ -1436,6 +1434,10 @@ def _commit_feature_rows(
                 "DELETE FROM baseline_evaluation_metadata "
                 "WHERE build_fingerprint IS NULL OR build_fingerprint <> ?",
                 [build_fingerprint],
+            )
+            invalidate_player_projection_runs(
+                connection,
+                build_fingerprint=build_fingerprint,
             )
             _validate_committed_feature_set(
                 connection,

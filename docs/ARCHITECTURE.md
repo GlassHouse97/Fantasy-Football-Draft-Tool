@@ -33,7 +33,7 @@ documented source or manual upload
 - `data/raw/` contains immutable source captures and manifests.
 - `data/processed/` contains reproducible derived Parquet files.
 - `data/warehouse/fantasy_football.duckdb` is the local analytical warehouse.
-- `models/artifacts/` and `models/reports/` contain generated model outputs.
+- `models/artifacts/<run_id>/<publication_id>/` contains serialized estimators, while `models/reports/<run_id>/<publication_id>/` contains the authoritative attempt-scoped evaluation and registry.
 - Generated data and models are ignored by Git; templates and test fixtures are not.
 
 The warehouse uses explicit canonical tables even before every importer exists. This prevents early source-specific column names from becoming the application contract.
@@ -84,7 +84,23 @@ The builder stages and atomically replaces the active logical set, enforces one 
 
 Five transparent baselines—previous season, weighted history, age/position adjusted, position shrinkage, and weighted components—are evaluated on expanding folds for 2020-2025. They produced 167,565 prediction rows and 80,060 evaluated rows from 6,464 evaluation candidates (3,102 positive-game, 3,344 zero-game, and 18 with unavailable games-active outcomes). The age/position-adjusted baseline achieved the best aggregate points-per-game MAE of 2.581 and total-points MAE of 33.324. No cutoff-safe historical ADP snapshots exist, so the current 2026 ADP snapshot is explicitly unavailable as a historical comparison.
 
-These are deterministic heuristics, not a trained statistical or ML player model. Phase 4 begins model training and must compare every candidate against this frozen chronological baseline. See [the Phase 3 evaluation report](PHASE_3_BASELINE_EVALUATION.md) and [learning chapter](learning/03_baselines_and_why_they_matter.md).
+These are deterministic heuristics rather than trained models. Their frozen fingerprints and chronological folds are the Phase 4 comparison contract. See [the Phase 3 evaluation report](PHASE_3_BASELINE_EVALUATION.md) and [learning chapter](learning/03_baselines_and_why_they_matter.md).
+
+## Phase 4 player models and projection publication
+
+Phase 4 is complete. `fantasy-draft models train-player-models` fits both Ridge and histogram gradient boosting for each combination of QB/RB/WR/TE and `fantasy_points_per_game`, `games_active`, and `fantasy_points_total`: 24 final registered estimators. Preprocessing, tuning, and signed-residual interval fitting remain inside chronological training data. Expanding 2020-2024 folds form the validation pool; the 2025 test is evaluated only after selection and never chooses a champion.
+
+Champion selection compares two learned families and all five transparent baselines for each of 12 position/target routes, producing 84 candidates. A learned route must have lower pooled validation MAE than the best baseline and a paired-bootstrap 95% confidence interval whose learned-minus-baseline upper bound is below zero. Otherwise the transparent baseline remains champion. Learned candidates passed for all eight total-points and games-active routes and histogram gradient boosting passed for WR points per game. QB, RB, and TE points per game retain `age_position_adjusted`.
+
+The validated run `phase4-7ae8e9aed04bffca00c0` has fingerprint `7ae8e9aed04bffca00c04d05e623f8afd20877dcfa09ddf43a8c1a7e8c34db03`. It persists 45,588 candidate prediction rows, 32,024 evaluable predictions, 6,804 live learned-candidate predictions, 12 champions, and a complete 1,367-player live board. Learned selections use empirical training-only residual P10/P50/P90 ranges evaluated by season, position, and projection tier. Transparent selections remain point estimates with `P10=P50=P90`.
+
+Historical preseason position evidence contains no valid rookie training cohort, so live rookies never receive a learned result. The board labels 233 point-only heuristic fallbacks: 21 QB, 46 RB, 114 WR, and 52 TE. This boundary is enforced in both persistence and presentation.
+
+Publication uses one atomic integrity boundary. All six `player_projection_*` tables are staged with status `validating`, audited against the same open DuckDB connection, and promoted to `complete` before that transaction commits. The audit reconciles Phase 3 lineage, row counts, chronology, intervals, board coverage, artifacts, model cards, evaluation files, registry, and diagnostic plot hashes. Any integrity or promotion failure rolls the transaction back, preserving the prior complete publication.
+
+The deterministic `run_id` names a model/data contract, while a unique `publication_id` names each immutable forced training attempt. DuckDB and the registered hashes are authoritative. Generated evaluation and registry files live under `models/reports/<run_id>/<publication_id>/`; artifact, card, and plot paths use the same attempt scope and are hashed. `docs/PHASE_4_MODEL_EVALUATION.*` and `models/registry.json` are convenience mirrors refreshed only after the verified transaction commits. Audit, status, and the projection service require exactly one current complete run and refuse stale, partial, orphaned, or tampered outputs. A changed Phase 3 feature/build or baseline-report fingerprint invalidates the dependent Phase 4 publication.
+
+The Streamlit app reads this contract through a read-only service. When integrity passes, it exposes the 2026 board, position/search/target filters, selected method, intervals, explanations, and run lineage. It does not expose ADP movement, next-pick availability, a draft recommendation, or a draft engine; those remain separate later phases. See [the Phase 4 evaluation report](PHASE_4_MODEL_EVALUATION.md).
 
 ## Interfaces chosen in Phase 0
 
