@@ -494,6 +494,7 @@ CREATE TABLE IF NOT EXISTS league_rules (
     platform VARCHAR NOT NULL,
     season INTEGER NOT NULL,
     team_count INTEGER NOT NULL,
+    user_draft_slot INTEGER,
     draft_type VARCHAR NOT NULL,
     rounds INTEGER NOT NULL,
     starter_slots_json JSON NOT NULL,
@@ -655,6 +656,7 @@ ALTER TABLE baseline_evaluation_metadata ADD COLUMN IF NOT EXISTS target_data_fi
 ALTER TABLE baseline_evaluation_metadata ADD COLUMN IF NOT EXISTS build_fingerprint VARCHAR;
 ALTER TABLE adp_snapshots ADD COLUMN IF NOT EXISTS source_stddev DOUBLE;
 ALTER TABLE adp_snapshots ADD COLUMN IF NOT EXISTS source_movement_horizon VARCHAR;
+ALTER TABLE league_rules ADD COLUMN IF NOT EXISTS user_draft_slot INTEGER;
 """
 
 

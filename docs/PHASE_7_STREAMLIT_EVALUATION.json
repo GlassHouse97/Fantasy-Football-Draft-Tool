@@ -1,0 +1,151 @@
+{
+  "capabilities": {
+    "championship_probabilities": "disabled",
+    "data_center": "available_allowlisted_actions",
+    "draft_room_manual_state": "available",
+    "learning_center": "available_read_only",
+    "league_history_archive": "available_archive_only",
+    "league_history_normalization": "not_implemented",
+    "league_setup": "available",
+    "model_lab": "available_read_only_no_training",
+    "post_draft_report": "available_descriptive",
+    "recommendation_production": "identity_mapping_required",
+    "simulation_production": "identity_mapping_required",
+    "sleeper_import": "not_implemented"
+  },
+  "data_center": {
+    "cli_only_handoffs": [
+      "fantasy-draft data load-nflverse",
+      "fantasy-draft data load-nflverse-participation",
+      "fantasy-draft data load-adp"
+    ],
+    "in_app_actions": [
+      "audit",
+      "initialize_warehouse",
+      "download_nflverse",
+      "download_nflverse_snap_counts",
+      "snapshot_ffc_adp",
+      "import_espn_csv",
+      "league_history_import"
+    ],
+    "league_history_policy": "archive_only_not_unpacked_parsed_normalized_or_modeled",
+    "raw_archive_policy": "timestamped_immutable_sha256_manifested"
+  },
+  "hosted_ci": {
+    "github_actions_status": "major_outage_pending_retry_not_green",
+    "incident_date": "2026-08-06",
+    "phase_6": {
+      "main_run_id": 31119062454,
+      "main_run_steps": 0,
+      "runner_id": 0,
+      "status": "canceled_before_runner_pending_retry"
+    },
+    "phase_7": {
+      "pull_request": 7,
+      "status": "pull_request_run_not_registered_during_outage"
+    },
+    "reminder": "active_hourly_retry_after_actions_recovery_for_phases_6_and_7"
+  },
+  "implementation_status": "PASSED",
+  "league_setup": {
+    "persistence": "idempotent_duckdb_upsert",
+    "rules_fingerprint": "existing_league_rules_sha256_contract",
+    "yaml_schema": "league-setup-v1",
+    "yaml_validation": "strict_fingerprint_checked"
+  },
+  "live_production": {
+    "archived_out_of_scope_adp_rows": 43,
+    "compatible_adp_rows": 203,
+    "manual_state_player_rows": 1367,
+    "mapped_adp_rows": 0,
+    "market_coverage": 0.0,
+    "recommendation_status": "identity_mapping_required",
+    "required_market_coverage": 1.0,
+    "simulation_status": "identity_mapping_required",
+    "state_status": "state_ready"
+  },
+  "model_lab": {
+    "mode": "read_only_validated_publication",
+    "training_action": "absent"
+  },
+  "phase": 7,
+  "phase_boundary": "Seven local Streamlit routes are complete without weakening upstream data, model-publication, identity, or draft-replay gates. No championship probability is produced.",
+  "post_draft": {
+    "missing_adp_policy": "nullable_not_imputed",
+    "point_only_uncertainty_policy": "unavailable_not_synthesized",
+    "report_type": "descriptive_draft_only",
+    "strategy_baseline": "fixed_recorded_opponents_no_counterfactual_reaction"
+  },
+  "publication_status": "PASSED_LOCAL_REPOSITORY_GATES",
+  "quality_gates": {
+    "browser_qa": {
+      "live_data_center_audit_action": "passed",
+      "multipage_navigation": "passed",
+      "status": "passed"
+    },
+    "data_center_live_audit": {
+      "manifests": 8,
+      "raw_files_verified": 12,
+      "status": "passed"
+    },
+    "focused_pytest": {
+      "passed": 38,
+      "status": "passed"
+    },
+    "mypy": {
+      "source_files": 87,
+      "status": "passed_strict"
+    },
+    "repository_wide_pytest": {
+      "duration_seconds": 127.81,
+      "passed": 251,
+      "status": "passed"
+    },
+    "ruff": "passed",
+    "streamlit_apptest": {
+      "exceptions": 0,
+      "pages": [
+        "Project Status",
+        "Data Center",
+        "Model Lab",
+        "League Setup",
+        "Draft Room",
+        "Post-Draft Report",
+        "Learning Center"
+      ],
+      "status": "passed"
+    }
+  },
+  "routes": [
+    {
+      "title": "Project Status",
+      "url_path": "status"
+    },
+    {
+      "title": "Data Center",
+      "url_path": "data-center"
+    },
+    {
+      "title": "Model Lab",
+      "url_path": "model-lab"
+    },
+    {
+      "title": "League Setup",
+      "url_path": "league-setup"
+    },
+    {
+      "title": "Draft Room",
+      "url_path": "draft-room"
+    },
+    {
+      "title": "Post-Draft",
+      "url_path": "post-draft"
+    },
+    {
+      "title": "Learning Center",
+      "url_path": "learning-center"
+    }
+  ],
+  "schema_version": "1.0",
+  "validation_scope": "repository_wide_local_gates_all_pages_live_audit_and_browser"
+}

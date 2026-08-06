@@ -174,7 +174,17 @@ One deterministic logical build record per `build_fingerprint`. It binds the sna
 
 ## `league_rules`
 
-One row per imported league-season configuration. `normalized_ruleset_json` is key-sorted canonical JSON; `ruleset_fingerprint` is its SHA-256 digest. A live Phase 6 session also freezes its exact rules JSON and full/scoring-only fingerprints in `draft_sessions`, so replay does not depend on a later configuration edit.
+One row per imported or locally saved league-season configuration. `normalized_ruleset_json` is key-sorted canonical JSON; `ruleset_fingerprint` is its SHA-256 digest. Phase 7 local setups also store `user_draft_slot` and optional `playoff_settings_json`. A null `user_draft_slot` identifies an older or historical-only rules row and excludes it from the local setup selector. A live Phase 6/7 session freezes its exact rules JSON and full/scoring-only fingerprints in `draft_sessions`, so replay does not depend on a later setup edit or deletion.
+
+| Field group | Meaning |
+|---|---|
+| Identity | `league_season_id`, `platform`, and `season` identify the saved setup. |
+| Draft context | `team_count`, nullable `user_draft_slot`, `draft_type`, and `rounds`. |
+| Roster context | Canonical starter/FLEX JSON plus bench and IR counts. |
+| Scoring and playoffs | Canonical scoring JSON and nullable validated playoff settings. |
+| Integrity | Canonical normalized rules JSON and the SHA-256 ruleset fingerprint. |
+
+`LeagueSetupRepository` upserts by `league_season_id`, but rejects an ID already owned by a historical-only row whose `user_draft_slot` is null. It then reloads the saved setup and verifies every decomposed rules field against the normalized JSON and fingerprint. Its versioned YAML envelope stores the same setup plus `sha256:<ruleset_fingerprint>`; import rejects unknown fields, invalid team-dependent values, and fingerprint mismatches.
 
 ## `draft_picks`
 
@@ -203,6 +213,20 @@ Replay derives snake ownership, current pick, every roster, availability, histor
 One persisted result per deterministic recommendation attempt. It binds the session/event version and state fingerprint to the engine-config fingerprint, random seed, simulation count, availability status, result fingerprint, canonical result payload, and creation time. Candidate roles and their raw/normalized components, simulation summaries, explanations, risks, limitations, and upstream evidence live inside the hashed result payload.
 
 The table does not imply production readiness. Controlled fixtures prove the engine, while current live recommendations remain unavailable until all required compatible ADP rows have reviewed canonical mappings. No championship-probability field is produced.
+
+## Phase 7 read and report contracts
+
+These are typed service contracts, not additional DuckDB tables:
+
+| Contract | Authority and fields |
+|---|---|
+| `DataCenterSnapshot` | Read-only inventory of immutable manifests/files, grouped source coverage, canonical table counts, current audit result, and a closed action-capability catalog. Acquisition results reference written archive/manifest paths; raw data is never overwritten. A league-history package may be quarantined as archive-only evidence, but no Phase 7 contract parses, normalizes, or models it. |
+| `ModelLabSnapshot` | Read-only view of the validated projection run, targets, feature contract, chronological folds, Phase 3/4 metrics, champion selections, residuals, feature importance, model-card/diagnostic paths, live players, and registered limitations. It cannot train or publish a model. |
+| `LeagueSetupRecord` | Exact normalized `LeagueRules`, user draft slot, platform, local setup ID, and optional playoff settings. `LeagueRules.fingerprint()` remains the rules identity. |
+| `LearningCenterCatalog` | Deterministic guide/notebook inventory with title, concise Markdown-derived summary, project-relative path, kind, and availability. Notebook code cells are not executed. |
+| `PostDraftReport` | Fingerprinted JSON-compatible output bound to session version, state/pool/model/ADP/rules lineage, selected team, exact lineup, player values, positional capital, ADP comparison, replacement risk, strategy baselines, strengths, weaknesses, and limitations. |
+
+The post-draft report remains truthful for partial evidence: incomplete rosters are provisional; missing ADP produces nullable value fields; point-only predictions produce nullable floor/ceiling values; and summed player intervals are not labeled calibrated team quantiles. It is descriptive draft analysis and contains no win, playoff, or championship probability.
 
 ## `team_outcomes`
 

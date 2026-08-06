@@ -36,6 +36,8 @@ documented source or manual upload
 - `models/artifacts/<run_id>/<publication_id>/` contains serialized estimators, while `models/reports/<run_id>/<publication_id>/` contains the authoritative attempt-scoped evaluation and registry.
 - `docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.*` contains the reproducible Phase 5 evidence mirror; canonical snapshots, features, forecasts, parameters, and build metadata remain in DuckDB.
 - DuckDB stores Phase 6 sessions, frozen player pools, append-only events, replay hashes, and recommendation-run payloads; local refreshes never make Streamlit session state authoritative.
+- DuckDB also stores Phase 7 league setups in `league_rules`; a saved draft slot and optional playoff settings accompany the already canonical normalized rules and fingerprint.
+- Phase 7 post-draft reports are deterministic read models generated from a verified session and its frozen player pool. JSON downloads are exports, not a second source of truth.
 - Generated data and models are ignored by Git; templates and test fixtures are not.
 
 The warehouse uses explicit canonical tables even before every importer exists. This prevents early source-specific column names from becoming the application contract.
@@ -140,6 +142,51 @@ The `phase6-baseline-v1` configuration is versioned and fingerprinted as `17e033
 
 Controlled mapped fixtures validate simulation and recommendation behavior, including ruleset-sensitive replacement value. Production remains deliberately gated: the current PPR/12-team market has 0 reviewed mappings across 203 draftable QB/RB/WR/TE rows. The other 43 archived PK/DEF rows stay auditable but are excluded from this ruleset's coverage denominator because no corresponding roster slots or projections exist. The manual Streamlit room and CLI remain fully usable for session creation, picks, undo, replacement, rosters, and replay verification; recommendation and Monte Carlo commands remain unavailable until canonical identity review and a new frozen session. See [the Phase 6 evaluation](PHASE_6_DRAFT_ENGINE_EVALUATION.md).
 
+## Phase 7 multipage application
+
+Phase 7 replaces the monolithic Streamlit tabs with seven unique `st.navigation` routes. The root `app.py` is only an entry point; page modules render presentation, while typed services own inventory, validation, persistence, and report calculations.
+
+| URL path | Page boundary |
+|---|---|
+| `/status` | Combines read-only project status, projection publication status, market readiness, and the recommended next action. |
+| `/data-center` | Displays source/manifests, canonical table counts, and audit evidence; dispatches only allowlisted safe actions. |
+| `/model-lab` | Reads the validated Phase 3/4 publication; it cannot train or promote models. |
+| `/league-setup` | Validates and persists exact roster, scoring, draft-slot, and playoff inputs. |
+| `/draft-room` | Reuses the Phase 6 repository and event stream for manual state and gated recommendations. |
+| `/post-draft` | Builds a descriptive, fingerprinted report from a verified session and frozen pool. |
+| `/learning-center` | Discovers Markdown guides and notebook Markdown without executing notebook code. |
+
+### Data Center action boundary
+
+`DataCenterSnapshot` is a read model over immutable manifests, source inventory, the canonical warehouse, and the audit result. User-triggered actions pass through a closed capability catalog and parameter validator. The app may:
+
+- run the read-only audit;
+- initialize or migrate DuckDB idempotently;
+- archive nflverse players/weekly statistics and PFR snap counts in timestamped, hashed files;
+- archive FFC ADP from its documented API; and
+- validate and immutably archive a user-selected ESPN CSV;
+- quarantine-archive a user-selected CSV, JSON, or ZIP league-history package without unpacking, parsing, normalizing, or modeling it.
+
+Canonical loads are deliberately CLI-only handoffs: `fantasy-draft data load-nflverse`, `fantasy-draft data load-nflverse-participation`, and `fantasy-draft data load-adp`. This keeps acquisition separate from normalization and quality-gated downstream rebuilds. Sleeper league import is unsupported. League-history intake is `archive_only`: the page warns the user to pseudonymize the package and stores its bytes and manifest locally, but no importer, canonical loader, analysis, or outcome model consumes it.
+
+### Model Lab read boundary
+
+`ModelLabSnapshot` reconstructs target and feature definitions, chronological folds, baseline/model metrics, champion decisions, residual summaries, feature importance, model-card and diagnostic references, and available live players from the validated warehouse publication. Player explanations come from the served projection payload; no estimator is loaded for inference or retraining. Nonchronological, missing, stale, or unreadable evidence makes the page unavailable. There is intentionally no training button.
+
+### League setup and draft continuity
+
+`LeagueSetupRecord` adds the user's draft slot and optional playoff context around `LeagueRules` without changing the existing canonical rules fingerprint. `LeagueSetupRepository` upserts one row per local setup in `league_rules`, rejects IDs already owned by historical-only rows, validates the decomposed columns against `normalized_ruleset_json` on reload, and excludes unrelated historical-only rules rows. YAML backup uses a versioned envelope plus `sha256:<ruleset fingerprint>` and rejects unknown fields or a mismatched digest. Deleting a setup does not delete draft sessions that already froze those rules.
+
+The Draft Room builds its searchable/ranked board from the selected persisted setup and a verified event-sourced session. Tiers are transparent position-rank bands, risk comes from the served interval width, and learned, transparent-baseline, heuristic, and unavailable methods remain distinct. A likely-gone indicator appears only when reviewed market evidence exists. The current live state remains usable for all 1,367 projection rows, while recommendation and simulation remain locked at 0/203 reviewed draftable mappings; 43 PK/DEF market rows remain outside configured coverage.
+
+### Post-draft and learning reports
+
+`PostDraftReport` verifies state/pool lineage before computing exact starter/bench assignment, positional draft capital, value versus reviewed ADP, ruleset-sensitive replacement risk, P10/P50/P90 summaries, strengths/weaknesses, and fixed-opponent strategy baselines. It supports incomplete drafts, but labels results provisional. Missing ADP is not imputed, point-only projections do not gain synthetic ranges, summed player intervals are not presented as calibrated team quantiles, and the strategy comparisons do not model opponent reactions. The report is descriptive and never estimates wins, playoffs, or championship probability.
+
+The Learning Center scans only `docs/learning/**/*.md` and `notebooks/**/*.ipynb`. It reads Markdown cells for titles and summaries, keeps unreadable resources visible as unavailable, links to repository files, and never executes notebook code.
+
+See [the Phase 7 evaluation](PHASE_7_STREAMLIT_EVALUATION.md) for the repository-wide local validation evidence and current hosted-CI caveat.
+
 ## Interfaces chosen in Phase 0
 
 - Python 3.11 is the canonical runtime.
@@ -153,4 +200,4 @@ Controlled mapped fixtures validate simulation and recommendation behavior, incl
 
 ## Security and privacy
 
-No ESPN scraping, authentication automation, cookies, or undocumented endpoints are used. Sleeper support will use only its documented read-only league interfaces. Personal league identifiers should be pseudonymized before publication. Secrets belong in `.env`, which is ignored.
+No ESPN scraping, authentication automation, cookies, or undocumented endpoints are used. Sleeper import is not implemented; any future support must use only documented read-only league interfaces. Personal league identifiers and exported league setups should be reviewed and pseudonymized before publication. Secrets belong in `.env`, which is ignored.

@@ -6,9 +6,9 @@ A local-first NFL redraft assistant that turns historical football data, exact l
 
 ## What works today
 
-This first runnable foundation includes:
+The runnable local foundation includes:
 
-- a packaged Python CLI and local Streamlit projection app;
+- a packaged Python CLI and seven-route local Streamlit application;
 - immutable raw-file archives with SHA-256 manifests;
 - a DuckDB warehouse schema for the project’s canonical tables;
 - current `nflreadpy` and Fantasy Football Calculator adapters with offline reuse;
@@ -28,9 +28,13 @@ This first runnable foundation includes:
 - an event-sourced snake-draft engine with immutable session pools, append-only picks, undo, replacement, and replay hashes;
 - exact ruleset-aware lineup assignment plus a seeded Monte Carlo and transparent recommendation baseline;
 - a runnable manual Streamlit draft room and deterministic draft CLI;
+- normalized, fingerprinted league setup persistence with YAML backup and restore;
+- an auditable Data Center and read-only Model Lab that preserve the data and model publication gates;
+- descriptive post-draft lineup, draft-capital, ADP-value, replacement-risk, and strategy reports;
+- a Learning Center that previews local guides and notebook Markdown without executing code;
 - tests for data integrity, leakage, chronological evaluation, model selection, publication integrity, ADP idempotency, availability bounds, scoring, rules, and replacement value.
 
-Phases 0 through 6 are complete. The app now includes a persistent manual draft room in addition to projections and ADP availability. The draft engine, seeded simulator, and configurable recommendation baseline pass controlled fixture tests, but live production recommendations remain locked: all 203 draftable QB/RB/WR/TE ADP rows currently lack reviewed canonical player mappings. The other 43 PK/DEF rows remain archived and auditable outside this ruleset's recommendation coverage. Manual picks, undo, replacement, rosters, and replay verification remain available. No championship probability is produced.
+Phases 0 through 7 are complete locally. Phase 7 organizes the existing contracts into Project Status, Data Center, Model Lab, League Setup, Draft Room, Post-Draft, and Learning Center routes. The draft engine, seeded simulator, and configurable recommendation baseline pass controlled fixture tests, but live production recommendations remain locked: all 203 draftable QB/RB/WR/TE ADP rows currently lack reviewed canonical player mappings. The other 43 PK/DEF rows remain archived and auditable outside this ruleset's recommendation coverage. Manual picks, undo, replacement, rosters, replay verification, and descriptive post-draft reporting remain available. No championship probability is produced.
 
 ## Local setup (Windows PowerShell)
 
@@ -194,6 +198,38 @@ fantasy-draft status
 
 The verified Phase 6 implementation gates include Ruff, strict mypy across 69 source files, 210 passing pytest tests in 77.23 seconds, a Streamlit AppTest run with zero exceptions across all six tabs, a passing data audit covering eight manifests and 12 verified immutable raw files, and the passing one-command quality-gate wrapper.
 
+The Phase 6 GitHub Actions workflow is not recorded as green. GitHub's runner outage canceled the pull-request and `main` workflows before a runner was assigned, so an hourly reminder is active to retry and verify the `main` run when hosted runners recover. The local Phase 6 evidence above remains valid; it is not a substitute for a completed hosted workflow.
+
+## Use the Phase 7 local application
+
+Start the app from the repository root:
+
+```powershell
+fantasy-draft app
+```
+
+Streamlit exposes one stable route for each workflow:
+
+| Route | Purpose |
+|---|---|
+| `/status` | Project readiness, current data/model facts, blockers, and next action |
+| `/data-center` | Immutable source archives, manifests, warehouse inventory, and quality audit |
+| `/model-lab` | Read-only model contract, chronological evidence, diagnostics, and player explanations |
+| `/league-setup` | Exact roster/scoring/playoff rules, draft slot, fingerprint, and YAML backup/restore |
+| `/draft-room` | Persistent manual picks, undo/replace, board filters, rosters, and gated recommendations |
+| `/post-draft` | Descriptive lineup, positional capital, value, risk, strategy, and limitation report |
+| `/learning-center` | Read-only previews and links for guides and notebooks |
+
+The Data Center may run read-only audits, idempotent warehouse initialization, immutable nflverse/snap-count/FFC/manual ESPN archive actions, and an archive-only quarantine intake for CSV/JSON/ZIP league-history packages. Canonical warehouse loads remain explicit CLI handoffs (`load-nflverse`, `load-nflverse-participation`, and `load-adp`) so archiving evidence cannot silently change downstream tables. Sleeper league import and league-history parsing, normalization, analysis, and modeling remain visibly unavailable until their real contracts exist.
+
+Model Lab never trains or promotes a model. It reads the validated Phase 3/4 publication and shows target/feature definitions, chronological folds, learned-versus-baseline decisions, metrics, residuals, feature importance, model cards, and served player explanations. Use the CLI training command only when intentionally creating a new model publication.
+
+League Setup persists normalized rules and the user's draft slot in DuckDB. Deterministic YAML exports include the ruleset fingerprint and reject tampering on import. Draft Room freezes the selected ruleset and projection/market lineage into each new session. Post-Draft reports may be generated for incomplete drafts, but those values are labeled provisional; missing ADP and uncertainty remain missing rather than being imputed.
+
+Phase 7 validation passed Ruff, strict mypy across 87 source files, 251 pytest tests in 127.81 seconds, AppTest with zero exceptions across all seven pages, and the CLI data audit across eight manifests and 12 verified immutable files. Real browser QA navigated the multipage app and successfully triggered the live Data Center audit action. See [the Phase 7 evaluation](docs/PHASE_7_STREAMLIT_EVALUATION.md).
+
+Hosted Phase 7 CI is not recorded as green. GitHub Actions was in a reported major outage when PR #7 was opened, and no workflow run registered for the branch. The existing hourly recovery reminder now tracks both the Phase 6 canceled run and the missing Phase 7 run; local validation is not presented as hosted-CI success.
+
 ## Learn the system
 
 - [Architecture](docs/ARCHITECTURE.md)
@@ -210,6 +246,7 @@ The verified Phase 6 implementation gates include Ruff, strict mypy across 69 so
 - [ADP movement and availability](docs/learning/08_adp_movement_and_availability.md)
 - [Phase 5 ADP and availability evaluation](docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.md)
 - [Phase 6 draft-engine evaluation](docs/PHASE_6_DRAFT_ENGINE_EVALUATION.md)
+- [Phase 7 Streamlit evaluation](docs/PHASE_7_STREAMLIT_EVALUATION.md)
 - [Next steps](docs/NEXT_STEPS.md)
 
 ## Data boundaries
