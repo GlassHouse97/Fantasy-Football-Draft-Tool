@@ -1,5 +1,6 @@
 """Streamlit application; reusable reads and validation remain in the package."""
 
+import uuid
 from typing import Any
 
 import pandas as pd
@@ -7,9 +8,23 @@ import streamlit as st
 import yaml
 
 from fantasy_draft_ai.config import load_config
+from fantasy_draft_ai.draft.repository import DraftRepository
+from fantasy_draft_ai.draft.roster import RosterPlayer, assign_roster
+from fantasy_draft_ai.draft.state import DraftStateError
+from fantasy_draft_ai.recommendations.config import load_draft_engine_config
+from fantasy_draft_ai.recommendations.engine import recommend_for_session
 from fantasy_draft_ai.rules.models import LeagueRules
 from fantasy_draft_ai.scoring.engine import PlayerStatLine, score_player
 from fantasy_draft_ai.services.adp_market import load_adp_market_board
+from fantasy_draft_ai.services.draft_room import (
+    DraftRoomSession,
+    create_draft_session,
+    load_draft_session,
+    prepare_draft_room,
+    record_draft_pick,
+    replace_draft_pick,
+    undo_draft_pick,
+)
 from fantasy_draft_ai.services.projections import (
     PROJECTION_TARGETS,
     TARGET_LABELS,
@@ -63,19 +78,39 @@ st.caption("Local-first projections, ruleset-aware value, and explanations you c
 config = load_config()
 projection_board = load_projection_board(config)
 adp_market_board = load_adp_market_board(config)
+rules_path = config.project_root / "configs" / "example_ppr_12_team.yaml"
+with rules_path.open(encoding="utf-8") as handle:
+    reference_rules = LeagueRules.model_validate(yaml.safe_load(handle))
+draft_engine_config = load_draft_engine_config(
+    config.project_root / "configs" / "draft_engine.yaml"
+)
+draft_preparation = prepare_draft_room(
+    projection_board,
+    adp_market_board,
+    rules=reference_rules,
+    projection_reference_rules=reference_rules,
+    required_market_coverage=draft_engine_config.market_coverage_required,
+)
+draft_repository = DraftRepository(config.resolve(config.paths.warehouse))
 
 tab_names = ["Project status"]
 if projection_board.available:
     tab_names.append(f"{config.project.prediction_season} projections")
 if adp_market_board.available:
     tab_names.append("ADP availability")
+if draft_preparation.readiness.state_ready:
+    tab_names.append("Draft room")
 tab_names.extend(["Scoring sandbox", "Learning path"])
 tabs = st.tabs(tab_names)
 tab_by_name = dict(zip(tab_names, tabs, strict=True))
 
 with tab_by_name["Project status"]:
     st.subheader("What is actually available")
-    for item in project_status(config, phase4_status=projection_board.status):
+    for item in project_status(
+        config,
+        phase4_status=projection_board.status,
+        draft_readiness=draft_preparation.readiness,
+    ):
         icon = "✅" if item.available else "⏳"
         st.write(f"{icon} **{item.name}:** {item.status}")
     if projection_board.available:
@@ -276,10 +311,360 @@ if adp_market_board.available:
                 "or calibration claim is active."
             )
 
+if draft_preparation.readiness.state_ready:
+    with tab_by_name["Draft room"]:
+        st.subheader("Event-sourced manual snake draft")
+        st.caption(
+            "Every pick, undo, and replacement is appended to DuckDB. The visible state is "
+            "rebuilt from that event stream, and the session freezes its projection and market "
+            "inputs so a later data refresh cannot rewrite the draft."
+        )
+        st.info(draft_preparation.readiness.state_message)
+        if draft_preparation.readiness.recommendation_ready:
+            st.success(draft_preparation.readiness.recommendation_message)
+        else:
+            st.warning(
+                f"Recommendations are locked: "
+                f"{draft_preparation.readiness.recommendation_message}"
+            )
+
+        try:
+            existing_sessions = draft_repository.list_sessions()
+        except (OSError, TypeError, ValueError, DraftStateError) as exc:
+            existing_sessions = ()
+            st.error(f"Draft persistence could not be opened: {exc}")
+
+        with st.expander("Create a new draft session", expanded=not existing_sessions):
+            setup_one, setup_two, setup_three = st.columns(3)
+            with setup_one:
+                session_name = st.text_input(
+                    "Session name",
+                    value="My 2026 draft",
+                    key="draft_session_name",
+                )
+            with setup_two:
+                user_slot = int(
+                    st.number_input(
+                        "Your draft slot",
+                        min_value=1,
+                        max_value=reference_rules.teams,
+                        value=1,
+                        step=1,
+                        key="draft_user_slot",
+                    )
+                )
+            with setup_three:
+                simulation_count = int(
+                    st.number_input(
+                        "Simulation paths",
+                        min_value=16,
+                        max_value=draft_engine_config.maximum_simulations,
+                        value=draft_engine_config.default_simulations,
+                        step=16,
+                        key="draft_simulation_count",
+                    )
+                )
+            st.write(
+                f"**Rules:** {reference_rules.teams} teams, "
+                f"{reference_rules.draft.rounds} rounds, "
+                f"fingerprint `{reference_rules.fingerprint()[:16]}...`"
+            )
+            if st.button("Create session", type="primary", key="create_draft_session"):
+                try:
+                    created = create_draft_session(
+                        draft_repository,
+                        draft_preparation,
+                        session_name=session_name,
+                        rules=reference_rules,
+                        user_draft_slot=user_slot,
+                        engine_config=draft_engine_config,
+                        random_seed=config.project.random_seed,
+                        simulation_count=simulation_count,
+                        command_id=f"streamlit-create-{uuid.uuid4().hex}",
+                    )
+                    st.session_state["selected_draft_session"] = created.state.session_id
+                    st.success(f"Created {created.state.session_id}.")
+                    st.rerun()
+                except (OSError, KeyError, TypeError, ValueError, DraftStateError) as exc:
+                    st.error(f"Session creation failed: {exc}")
+
+        if existing_sessions:
+            session_ids = [session.session_id for session in existing_sessions]
+            prior_selection = st.session_state.get("selected_draft_session")
+            default_index = (
+                session_ids.index(prior_selection) if prior_selection in session_ids else 0
+            )
+            selected_session_id = st.selectbox(
+                "Open session",
+                session_ids,
+                index=default_index,
+                format_func=lambda session_id: next(
+                    f"{item.session_name} ({item.session_id}, v{item.current_version})"
+                    for item in existing_sessions
+                    if item.session_id == session_id
+                ),
+                key="draft_session_selector",
+            )
+            st.session_state["selected_draft_session"] = selected_session_id
+            draft_session: DraftRoomSession | None
+            try:
+                draft_session = load_draft_session(draft_repository, selected_session_id)
+            except (OSError, KeyError, TypeError, ValueError, DraftStateError) as exc:
+                st.error(f"Session replay failed: {exc}")
+                draft_session = None
+
+            if draft_session is not None:
+                state = draft_session.state
+                current_round = (
+                    None
+                    if state.current_overall_pick is None
+                    else (state.current_overall_pick - 1) // state.rules.teams + 1
+                )
+                header_one, header_two, header_three, header_four = st.columns(4)
+                header_one.metric(
+                    "Current pick",
+                    (
+                        "Complete"
+                        if state.current_overall_pick is None
+                        else state.current_overall_pick
+                    ),
+                )
+                header_two.metric("Round", "Complete" if current_round is None else current_round)
+                header_three.metric("On the clock", state.current_team_id or "Complete")
+                header_four.metric(
+                    "Your following pick",
+                    state.next_user_pick(include_current=False) or "None",
+                )
+                st.caption(
+                    f"Event version {state.version} · state hash `{state.fingerprint()[:20]}...` · "
+                    f"your team `{state.user_team_id}`"
+                )
+
+                available_players = [
+                    player
+                    for player in draft_session.players
+                    if player.player_id not in state.selected_player_ids
+                ]
+                available_positions = sorted({player.position for player in available_players})
+                board_filter, board_search = st.columns([1, 2])
+                with board_filter:
+                    draft_positions = st.multiselect(
+                        "Draft positions",
+                        available_positions,
+                        default=available_positions,
+                        key="draft_position_filter",
+                    )
+                with board_search:
+                    draft_search = st.text_input(
+                        "Search available players",
+                        key="draft_player_search",
+                    )
+                filtered_players = [
+                    player
+                    for player in available_players
+                    if player.position in draft_positions
+                    and draft_search.casefold() in player.display_name.casefold()
+                ]
+                filtered_players.sort(key=lambda player: (-player.p50, player.display_name))
+                st.dataframe(
+                    pd.DataFrame.from_records(
+                        {
+                            "Player": player.display_name,
+                            "Pos": player.position,
+                            "P10": player.p10,
+                            "P50": player.p50,
+                            "P90": player.p90,
+                            "ADP": player.average_pick,
+                            "Market mapping": player.mapping_confidence or "unresolved",
+                            "Method": player.projection_method,
+                        }
+                        for player in filtered_players[:150]
+                    ),
+                    hide_index=True,
+                    width="stretch",
+                    column_config={
+                        "P10": st.column_config.NumberColumn(format="%.1f"),
+                        "P50": st.column_config.NumberColumn(format="%.1f"),
+                        "P90": st.column_config.NumberColumn(format="%.1f"),
+                        "ADP": st.column_config.NumberColumn(format="%.1f"),
+                    },
+                )
+                st.caption(
+                    f"{len(available_players):,} players remain; showing up to 150 filtered rows."
+                )
+
+                if state.current_overall_pick is not None and filtered_players:
+                    pick_options = {player.player_id: player for player in filtered_players}
+                    selected_pick_player = st.selectbox(
+                        "Record player",
+                        list(pick_options),
+                        format_func=lambda player_id: (
+                            f"{pick_options[player_id].display_name} "
+                            f"({pick_options[player_id].position})"
+                        ),
+                        key="draft_pick_player",
+                    )
+                    if st.button("Record pick", type="primary", key="record_draft_pick"):
+                        try:
+                            record_draft_pick(
+                                draft_repository,
+                                state.session_id,
+                                selected_pick_player,
+                                expected_version=state.version,
+                                command_id=f"streamlit-pick-{uuid.uuid4().hex}",
+                            )
+                            st.rerun()
+                        except (OSError, KeyError, TypeError, ValueError, DraftStateError) as exc:
+                            st.error(f"Pick failed: {exc}")
+
+                action_one, action_two = st.columns(2)
+                with action_one:
+                    if st.button(
+                        "Undo latest pick",
+                        disabled=not state.picks,
+                        key="undo_draft_pick",
+                    ):
+                        try:
+                            undo_draft_pick(
+                                draft_repository,
+                                state.session_id,
+                                expected_version=state.version,
+                                command_id=f"streamlit-undo-{uuid.uuid4().hex}",
+                            )
+                            st.rerun()
+                        except (
+                            OSError,
+                            KeyError,
+                            TypeError,
+                            ValueError,
+                            DraftStateError,
+                        ) as exc:
+                            st.error(f"Undo failed: {exc}")
+                with action_two:
+                    st.write(
+                        "Undo and replacement append history; original event rows are retained."
+                    )
+
+                if state.picks and available_players:
+                    with st.expander("Replace an earlier pick"):
+                        replacement_pick = st.selectbox(
+                            "Pick to replace",
+                            list(range(1, len(state.picks) + 1)),
+                            format_func=lambda overall: (
+                                f"{overall}: {state.picks[overall - 1].player_name} "
+                                f"({state.picks[overall - 1].team_id})"
+                            ),
+                            key="replacement_pick",
+                        )
+                        replacement_options = {
+                            player.player_id: player for player in available_players
+                        }
+                        replacement_player = st.selectbox(
+                            "New player",
+                            list(replacement_options),
+                            format_func=lambda player_id: (
+                                f"{replacement_options[player_id].display_name} "
+                                f"({replacement_options[player_id].position})"
+                            ),
+                            key="replacement_player",
+                        )
+                        if st.button("Replace pick", key="replace_draft_pick"):
+                            try:
+                                replace_draft_pick(
+                                    draft_repository,
+                                    state.session_id,
+                                    replacement_pick,
+                                    replacement_player,
+                                    expected_version=state.version,
+                                    command_id=f"streamlit-replace-{uuid.uuid4().hex}",
+                                )
+                                st.rerun()
+                            except (
+                                OSError,
+                                KeyError,
+                                TypeError,
+                                ValueError,
+                                DraftStateError,
+                            ) as exc:
+                                st.error(f"Replacement failed: {exc}")
+
+                st.divider()
+                st.subheader("All team rosters")
+                roster_records: list[dict[str, Any]] = []
+                for draft_slot in range(1, state.rules.teams + 1):
+                    roster_picks = state.roster(draft_slot)
+                    assignment = assign_roster(
+                        [
+                            RosterPlayer(
+                                pick.player_id,
+                                pick.position,
+                                pick.projected_points,
+                            )
+                            for pick in roster_picks
+                        ],
+                        state.rules,
+                    )
+                    for pick in roster_picks:
+                        roster_records.append(
+                            {
+                                "Team": pick.team_id,
+                                "Overall": pick.overall_pick,
+                                "Player": pick.player_name,
+                                "Pos": pick.position,
+                                "Assigned slot": assignment.slot_for_player(pick.player_id),
+                                "Projected P50": pick.projected_points,
+                            }
+                        )
+                st.dataframe(
+                    pd.DataFrame.from_records(roster_records),
+                    hide_index=True,
+                    width="stretch",
+                )
+
+                st.divider()
+                st.subheader("Recommendation baseline")
+                if draft_session.info.recommendation_status != "recommendation_ready":
+                    st.warning(draft_session.info.recommendation_message)
+                    st.caption(
+                        "Manual drafting remains available. Review canonical ADP identities, "
+                        "then create a new frozen session after rebuilding Phase 5."
+                    )
+                elif not state.is_user_turn:
+                    st.info("Recommendations will be available when your team is on the clock.")
+                elif st.button("Run recommendation simulation", key="run_recommendation"):
+                    with st.spinner("Simulating reproducible rest-of-draft paths..."):
+                        result = recommend_for_session(
+                            draft_repository,
+                            state.session_id,
+                            draft_engine_config,
+                        )
+                    if not result.available:
+                        st.warning(result.message)
+                    else:
+                        for candidate in result.candidates:
+                            st.markdown(
+                                f"**{candidate.role.replace('_', ' ').title()}: "
+                                f"{candidate.display_name} ({candidate.position})**"
+                            )
+                            st.write(
+                                f"Score {candidate.draft_recommendation_score:.1f} · "
+                                f"P50 VORP {candidate.p50_vorp:.1f} · "
+                                f"P(gone) {candidate.probability_gone_next_pick:.1%}"
+                            )
+                            st.write(candidate.explanation)
+                            with st.expander("Components, simulation, and risks"):
+                                st.dataframe(
+                                    pd.DataFrame.from_records(
+                                        item.as_dict() for item in candidate.components
+                                    ),
+                                    hide_index=True,
+                                )
+                                st.json(candidate.simulation)
+                                for risk in candidate.primary_risks:
+                                    st.write(f"- {risk}")
+
 with tab_by_name["Scoring sandbox"]:
-    rules_path = config.project_root / "configs" / "example_ppr_12_team.yaml"
-    with rules_path.open(encoding="utf-8") as handle:
-        rules = LeagueRules.model_validate(yaml.safe_load(handle))
+    rules = reference_rules
     st.write(f"Example ruleset fingerprint: `{rules.fingerprint()}`")
     position = st.selectbox("Position", ["QB", "RB", "WR", "TE"], index=2)
     receptions = st.number_input("Receptions", min_value=0.0, value=7.0, step=1.0)

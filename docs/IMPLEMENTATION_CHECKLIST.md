@@ -98,8 +98,40 @@
 - [x] Publish the Phase 5 evaluation report, learning chapter, app market view, audit/status checks, and integration/unit tests.
 - [x] Keep draft recommendations, mutable draft state, and Monte Carlo simulation explicitly unavailable.
 
+## Phase 6 — draft engine (complete; production activation gated)
+
+- [x] Implement deterministic odd/even snake order, current-pick ownership, and next-user-pick calculation.
+- [x] Represent session start, manual pick, undo, and replacement as append-only events.
+- [x] Use idempotent command IDs and optimistic event versions to reject duplicate or stale mutations.
+- [x] Bind every event to prior/result state fingerprints and verify full replay after persistence.
+- [x] Preserve original history when undoing or replacing a pick.
+- [x] Prevent duplicate players, wrong pick ownership, sequence gaps, and illegal post-completion picks.
+- [x] Implement exact starter/FLEX/SUPERFLEX/bench assignment without greedy slot-order errors.
+- [x] Freeze canonical total-points projections, model lineage, rules, scoring fingerprint, market evidence, configuration, seed, and simulation count into each session.
+- [x] Keep existing session pools stable after later upstream refreshes.
+- [x] Join Phase 4 projections to Phase 5 market rows only through reviewed canonical player IDs; never join by display name.
+- [x] Detect duplicate mappings, projection/mapping gaps, position conflicts, and incompatible season/team/scoring scopes.
+- [x] Allow state-only sessions when market mappings are incomplete while keeping recommendation/simulation status unavailable.
+- [x] Verify scoring-only compatibility so roster variants may reuse projections but scoring changes are blocked.
+- [x] Implement the Streamlit manual room with session restore, searchable board, picks, undo, replacement, roster grid, replay lineage, and gated recommendations.
+- [x] Implement CLI create/list/show/pick/undo/replace/verify/recommend commands.
+- [x] Version and fingerprint `phase6-baseline-v1` with 64 default paths, six evaluated candidates, bounded work, and 100% compatible-market coverage.
+- [x] Implement seeded, order-independent rest-of-draft simulation with opponent ADP, roster need, bounded positional runs, and exact lineup value.
+- [x] Keep point-only projections deterministic instead of fabricating outcome variance.
+- [x] Implement recomputable balanced, safe-floor, and high-upside baseline recommendation scores with visible components, weights, explanations, and risks.
+- [x] Prove ruleset-sensitive replacement behavior with controlled roster-format fixtures.
+- [x] Persist recommendation attempts with session state, seed/config lineage, result fingerprint, and canonical payload.
+- [x] Extend data audit and status with draft replay, session, recommendation, simulation, and championship-probability boundaries.
+- [x] Keep championship probabilities disabled and absent from recommendation payloads.
+- [x] Report current live readiness honestly: manual state ready for 1,367 canonical players; recommendation/simulation gated at 0/203 draftable QB/RB/WR/TE ADP mappings, with 43 PK/DEF rows retained outside coverage.
+- [x] Publish the Phase 6 evaluation report without treating mapped fixture success as live production readiness.
+- [x] Pass strict mypy across 69 source files and the full 210-test pytest suite in 77.23 seconds.
+- [x] Pass Streamlit AppTest with zero exceptions across all six application tabs.
+- [x] Pass the data audit with eight manifests, 12 verified raw files, and empty initialized Phase 6 tables before the first user session.
+- [x] Pass Ruff and the final one-command quality-gate wrapper.
+
 ## Future phases
 
-- [ ] Phase 6 (next): event-sourced snake draft and Monte Carlo optimization.
-- [ ] Phase 7: full multipage Streamlit workflow.
+- [ ] Operator prerequisite: review canonical FFC identities, rebuild Phase 5, and create a new frozen recommendation-ready session.
+- [ ] Phase 7 (next): multipage UI, Data Center, Model Lab, League Setup, post-draft reporting, exports, and learning-center polish.
 - [ ] Phase 8: descriptive league-history analysis and gated outcome modeling.

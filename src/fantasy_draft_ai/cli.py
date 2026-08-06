@@ -29,11 +29,25 @@ from fantasy_draft_ai.data.sources.nflverse import (
     download_nflverse_snap_counts,
 )
 from fantasy_draft_ai.data.warehouse import Warehouse
+from fantasy_draft_ai.draft.repository import DraftRepository
+from fantasy_draft_ai.draft.state import DraftStateError
 from fantasy_draft_ai.features.player_seasons import build_player_season_features
 from fantasy_draft_ai.logging import configure_logging
 from fantasy_draft_ai.models.baselines.evaluate import evaluate_baselines
+from fantasy_draft_ai.recommendations.config import load_draft_engine_config
+from fantasy_draft_ai.recommendations.engine import recommend_for_session
 from fantasy_draft_ai.rules.models import LeagueRules
 from fantasy_draft_ai.scoring.engine import PlayerStatLine, score_player
+from fantasy_draft_ai.services.adp_market import load_adp_market_board
+from fantasy_draft_ai.services.draft_room import (
+    create_draft_session,
+    load_draft_session,
+    prepare_draft_room,
+    record_draft_pick,
+    replace_draft_pick,
+    undo_draft_pick,
+)
+from fantasy_draft_ai.services.projections import load_projection_board
 from fantasy_draft_ai.services.status import project_status
 
 app = typer.Typer(no_args_is_help=True, help="Local fantasy football modeling and draft tools.")
@@ -41,16 +55,28 @@ data_app = typer.Typer(no_args_is_help=True, help="Acquire, import, and audit da
 rules_app = typer.Typer(no_args_is_help=True, help="Inspect normalized league rules.")
 features_app = typer.Typer(no_args_is_help=True, help="Build cutoff-safe modeling features.")
 models_app = typer.Typer(no_args_is_help=True, help="Evaluate projection baselines and models.")
+draft_app = typer.Typer(no_args_is_help=True, help="Run a persisted manual snake draft.")
 app.add_typer(data_app, name="data")
 app.add_typer(rules_app, name="rules")
 app.add_typer(features_app, name="features")
 app.add_typer(models_app, name="models")
+app.add_typer(draft_app, name="draft")
 
 
 def _load_rules(path: Path) -> LeagueRules:
     with path.open(encoding="utf-8") as handle:
         payload = yaml.safe_load(handle)
     return LeagueRules.model_validate(payload)
+
+
+def _draft_repository() -> DraftRepository:
+    config = load_config()
+    return DraftRepository(config.resolve(config.paths.warehouse))
+
+
+def _draft_error(exc: Exception) -> None:
+    typer.echo(f"Draft command failed: {exc}", err=True)
+    raise typer.Exit(code=2)
 
 
 @app.callback()
@@ -412,6 +438,196 @@ def build_adp_baselines_command(
     )
     typer.echo(result.render())
     if not result.committed and not result.reused:
+        raise typer.Exit(code=2)
+
+
+@draft_app.command("create")
+def create_draft_command(
+    rules_path: Annotated[
+        Path,
+        typer.Option("--rules", help="League rules for this session."),
+    ] = Path("configs/example_ppr_12_team.yaml"),
+    draft_slot: Annotated[int, typer.Option("--draft-slot", min=1, max=32)] = 1,
+    name: Annotated[str, typer.Option("--name", help="Local session label.")] = "My draft",
+    simulations: Annotated[
+        int | None,
+        typer.Option("--simulations", min=1, max=1000),
+    ] = None,
+    seed: Annotated[int | None, typer.Option("--seed")] = None,
+) -> None:
+    """Create a session with frozen projections and reviewed market mappings."""
+
+    try:
+        config = load_config()
+        rules = _load_rules(rules_path)
+        reference_rules = _load_rules(
+            config.project_root / "configs" / "example_ppr_12_team.yaml"
+        )
+        engine_config = load_draft_engine_config(
+            config.project_root / "configs" / "draft_engine.yaml"
+        )
+        preparation = prepare_draft_room(
+            load_projection_board(config),
+            load_adp_market_board(config),
+            rules=rules,
+            projection_reference_rules=reference_rules,
+            required_market_coverage=engine_config.market_coverage_required,
+        )
+        session = create_draft_session(
+            _draft_repository(),
+            preparation,
+            session_name=name,
+            rules=rules,
+            user_draft_slot=draft_slot,
+            engine_config=engine_config,
+            random_seed=config.project.random_seed if seed is None else seed,
+            simulation_count=simulations,
+        )
+    except (OSError, KeyError, TypeError, ValueError, DraftStateError) as exc:
+        _draft_error(exc)
+        return
+    typer.echo(f"Created draft session: {session.state.session_id}")
+    typer.echo(f"Current pick: {session.state.current_overall_pick}")
+    typer.echo(
+        f"Recommendation status: {session.info.recommendation_status} - "
+        f"{session.info.recommendation_message}"
+    )
+
+
+@draft_app.command("list")
+def list_drafts_command() -> None:
+    """List locally persisted draft sessions."""
+
+    try:
+        sessions = _draft_repository().list_sessions()
+    except (OSError, TypeError, ValueError, DraftStateError) as exc:
+        _draft_error(exc)
+        return
+    if not sessions:
+        typer.echo("No draft sessions have been created.")
+        return
+    for session in sessions:
+        typer.echo(
+            f"{session.session_id} | {session.session_name} | {session.status} | "
+            f"version {session.current_version} | {session.recommendation_status}"
+        )
+
+
+@draft_app.command("show")
+def show_draft_command(session_id: Annotated[str, typer.Option("--session-id")]) -> None:
+    """Verify and print the current state derived from the event stream."""
+
+    try:
+        session = load_draft_session(_draft_repository(), session_id)
+    except (OSError, KeyError, TypeError, ValueError, DraftStateError) as exc:
+        _draft_error(exc)
+        return
+    payload = session.state.as_dict()
+    payload["recommendation_status"] = session.info.recommendation_status
+    payload["recommendation_message"] = session.info.recommendation_message
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+
+
+@draft_app.command("pick")
+def draft_pick_command(
+    session_id: Annotated[str, typer.Option("--session-id")],
+    player_id: Annotated[str, typer.Option("--player-id")],
+    expected_version: Annotated[int, typer.Option("--expected-version", min=0)],
+) -> None:
+    """Record the on-clock team's next canonical player selection."""
+
+    try:
+        session = record_draft_pick(
+            _draft_repository(),
+            session_id,
+            player_id,
+            expected_version=expected_version,
+        )
+    except (OSError, KeyError, TypeError, ValueError, DraftStateError) as exc:
+        _draft_error(exc)
+        return
+    typer.echo(
+        f"Recorded pick {len(session.state.picks)}; next pick "
+        f"{session.state.current_overall_pick}; version {session.state.version}."
+    )
+
+
+@draft_app.command("undo")
+def draft_undo_command(
+    session_id: Annotated[str, typer.Option("--session-id")],
+    expected_version: Annotated[int, typer.Option("--expected-version", min=0)],
+) -> None:
+    """Append an undo event for the latest active pick."""
+
+    try:
+        session = undo_draft_pick(
+            _draft_repository(),
+            session_id,
+            expected_version=expected_version,
+        )
+    except (OSError, KeyError, TypeError, ValueError, DraftStateError) as exc:
+        _draft_error(exc)
+        return
+    typer.echo(
+        f"Undid the latest pick; current pick {session.state.current_overall_pick}; "
+        f"version {session.state.version}."
+    )
+
+
+@draft_app.command("replace")
+def draft_replace_command(
+    session_id: Annotated[str, typer.Option("--session-id")],
+    overall_pick: Annotated[int, typer.Option("--overall-pick", min=1)],
+    player_id: Annotated[str, typer.Option("--player-id")],
+    expected_version: Annotated[int, typer.Option("--expected-version", min=0)],
+) -> None:
+    """Append a replacement event without deleting the original pick."""
+
+    try:
+        session = replace_draft_pick(
+            _draft_repository(),
+            session_id,
+            overall_pick,
+            player_id,
+            expected_version=expected_version,
+        )
+    except (OSError, KeyError, TypeError, ValueError, DraftStateError) as exc:
+        _draft_error(exc)
+        return
+    typer.echo(f"Replaced pick {overall_pick}; version {session.state.version}.")
+
+
+@draft_app.command("verify")
+def verify_draft_command(session_id: Annotated[str, typer.Option("--session-id")]) -> None:
+    """Verify event hashes, replay, metadata, and the frozen player pool."""
+
+    try:
+        state = _draft_repository().verify_session(session_id)
+    except (OSError, KeyError, TypeError, ValueError, DraftStateError) as exc:
+        _draft_error(exc)
+        return
+    typer.echo(
+        f"PASSED: {session_id} version {state.version} replayed to {state.fingerprint()}."
+    )
+
+
+@draft_app.command("recommend")
+def recommend_draft_command(
+    session_id: Annotated[str, typer.Option("--session-id")],
+) -> None:
+    """Run the frozen, reproducible recommendation baseline when market mappings permit."""
+
+    try:
+        config = load_config()
+        engine_config = load_draft_engine_config(
+            config.project_root / "configs" / "draft_engine.yaml"
+        )
+        result = recommend_for_session(_draft_repository(), session_id, engine_config)
+    except (OSError, KeyError, TypeError, ValueError, DraftStateError) as exc:
+        _draft_error(exc)
+        return
+    typer.echo(json.dumps(result.as_dict(), indent=2, sort_keys=True))
+    if not result.available:
         raise typer.Exit(code=2)
 
 

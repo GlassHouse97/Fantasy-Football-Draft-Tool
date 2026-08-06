@@ -1,0 +1,45 @@
+version: phase6-baseline-v1
+default_simulations: 64
+maximum_simulations: 1000
+candidate_count: 6
+opponent_candidate_window: 30
+work_budget: 1000000
+position_need_multiplier: 0.35
+positional_run_multiplier: 0.12
+positional_run_window: 3
+minimum_pick_weight: 0.0001
+bench_value_credit: 0.10
+market_coverage_required: 1.0
+balanced:
+  p50_vorp: 0.20
+  floor_vorp: 0.05
+  ceiling_vorp: 0.05
+  scarcity: 0.12
+  gone_probability: 0.13
+  roster_fit: 0.15
+  simulation_mean: 0.20
+  simulation_floor: 0.03
+  simulation_ceiling: 0.02
+  risk_penalty: 0.05
+safe_floor:
+  p50_vorp: 0.10
+  floor_vorp: 0.23
+  ceiling_vorp: 0.00
+  scarcity: 0.07
+  gone_probability: 0.08
+  roster_fit: 0.15
+  simulation_mean: 0.07
+  simulation_floor: 0.22
+  simulation_ceiling: 0.00
+  risk_penalty: 0.08
+high_upside:
+  p50_vorp: 0.10
+  floor_vorp: 0.00
+  ceiling_vorp: 0.24
+  scarcity: 0.13
+  gone_probability: 0.13
+  roster_fit: 0.10
+  simulation_mean: 0.05
+  simulation_floor: 0.00
+  simulation_ceiling: 0.20
+  risk_penalty: 0.05

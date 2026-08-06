@@ -1,0 +1,87 @@
+{
+  "capabilities": {
+    "championship_probabilities": "disabled",
+    "manual_cli": "available",
+    "manual_streamlit_room": "available",
+    "monte_carlo_production": "identity_mapping_required",
+    "recommendation_production": "identity_mapping_required",
+    "state_engine": "available"
+  },
+  "configuration": {
+    "candidate_count": 6,
+    "default_simulation_paths": 64,
+    "fingerprint": "17e0337939917fcfcb08ec764d88b43a7001e4c3c776c3ac8597390cb54ad9c9",
+    "market_coverage_required": 1.0,
+    "maximum_simulation_paths": 1000,
+    "reference_rules_fingerprint": "9f660dd5c8db91e63a1c43a5db74a3848b0554b2acf94d0fd891fe58b4eb7871",
+    "scoring_only_fingerprint": "984854f3468e902beaab0381e735d7b2d1ac331e9335097bfbae6da59e5f43e8",
+    "version": "phase6-baseline-v1",
+    "work_budget": 1000000
+  },
+  "engine_status": "PASSED",
+  "fixture_evidence": {
+    "append_only_replay": "passed",
+    "canonical_id_only_pool": "passed",
+    "exact_lineup_assignment": "passed",
+    "no_championship_probability_output": "passed",
+    "point_only_outcomes_deterministic": "passed",
+    "recommendation_roles": [
+      "balanced",
+      "safe_floor",
+      "high_upside"
+    ],
+    "ruleset_sensitive_replacement": "passed",
+    "seeded_simulation": "passed"
+  },
+  "live_production": {
+    "archived_out_of_scope_adp_rows": 43,
+    "compatible_adp_rows": 203,
+    "manual_state_player_rows": 1367,
+    "mapped_adp_rows": 0,
+    "market_coverage": 0.0,
+    "recommendation_status": "identity_mapping_required",
+    "required_market_coverage": 1.0,
+    "simulation_status": "identity_mapping_required",
+    "state_status": "state_ready"
+  },
+  "phase": 6,
+  "phase_boundary": "The engine and manual room are complete. Live recommendations and Monte Carlo require reviewed canonical ADP mappings. No championship probability is produced.",
+  "production_recommendation_status": "GATED_CANONICAL_IDENTITY_MAPPING_REQUIRED",
+  "quality_gates": {
+    "data_audit": {
+      "draft_events_rows": 0,
+      "draft_recommendation_runs_rows": 0,
+      "draft_session_players_rows": 0,
+      "draft_sessions_rows": 0,
+      "manifests": 8,
+      "raw_files_verified": 12,
+      "status": "passed"
+    },
+    "focused_phase6_gates": "passed",
+    "mypy": {
+      "source_files": 69,
+      "status": "passed_strict"
+    },
+    "one_command_wrapper": "passed",
+    "pytest": {
+      "duration_seconds": 77.23,
+      "passed": 210,
+      "status": "passed"
+    },
+    "ruff": "passed",
+    "streamlit_apptest": {
+      "exceptions": 0,
+      "status": "passed",
+      "tabs": [
+        "Project status",
+        "2026 projections",
+        "ADP availability",
+        "Draft room",
+        "Scoring sandbox",
+        "Learning path"
+      ]
+    }
+  },
+  "schema_version": "1.0",
+  "validation_scope": "controlled_mapped_fixtures_plus_live_readiness_gate"
+}

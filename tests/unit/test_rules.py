@@ -1,5 +1,7 @@
 from collections.abc import Callable
 
+import pytest
+
 from fantasy_draft_ai.rules.models import LeagueRules
 
 
@@ -28,3 +30,13 @@ def test_fingerprint_is_deterministic_for_equivalent_input(
     second = LeagueRules.model_validate(payload)
     assert first.canonical_json() == second.canonical_json()
     assert first.fingerprint() == second.fingerprint()
+
+
+def test_draft_rounds_must_exactly_match_roster_capacity(
+    rules_factory: Callable[..., LeagueRules],
+) -> None:
+    payload = rules_factory().model_dump(mode="python")
+    payload["draft"]["rounds"] += 1
+
+    with pytest.raises(ValueError, match="exactly fill"):
+        LeagueRules.model_validate(payload)

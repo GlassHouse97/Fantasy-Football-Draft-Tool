@@ -521,6 +521,83 @@ CREATE TABLE IF NOT EXISTS draft_picks (
     PRIMARY KEY (league_season_id, overall_pick)
 );
 
+CREATE TABLE IF NOT EXISTS draft_sessions (
+    session_id VARCHAR PRIMARY KEY,
+    session_name VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    ruleset_json JSON NOT NULL,
+    ruleset_fingerprint VARCHAR NOT NULL,
+    scoring_fingerprint VARCHAR NOT NULL,
+    team_count INTEGER NOT NULL,
+    rounds INTEGER NOT NULL,
+    user_draft_slot INTEGER NOT NULL,
+    projection_run_id VARCHAR NOT NULL,
+    adp_build_fingerprint VARCHAR,
+    player_pool_fingerprint VARCHAR NOT NULL,
+    engine_config_fingerprint VARCHAR NOT NULL,
+    player_pool_rows INTEGER NOT NULL,
+    mapped_market_rows INTEGER NOT NULL,
+    recommendation_status VARCHAR NOT NULL,
+    recommendation_message VARCHAR NOT NULL,
+    random_seed BIGINT NOT NULL,
+    simulation_count INTEGER NOT NULL,
+    current_version INTEGER NOT NULL,
+    state_fingerprint VARCHAR NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS draft_session_players (
+    session_id VARCHAR NOT NULL,
+    player_id VARCHAR NOT NULL,
+    display_name VARCHAR NOT NULL,
+    position VARCHAR NOT NULL,
+    p10 DOUBLE NOT NULL,
+    p50 DOUBLE NOT NULL,
+    p90 DOUBLE NOT NULL,
+    prediction_status VARCHAR NOT NULL,
+    projection_source VARCHAR NOT NULL,
+    projection_method VARCHAR NOT NULL,
+    market_source VARCHAR,
+    market_snapshot_id VARCHAR,
+    market_captured_at TIMESTAMPTZ,
+    average_pick DOUBLE,
+    availability_scale DOUBLE,
+    availability_evidence VARCHAR,
+    mapping_confidence VARCHAR,
+    player_payload JSON NOT NULL,
+    PRIMARY KEY (session_id, player_id)
+);
+
+CREATE TABLE IF NOT EXISTS draft_events (
+    session_id VARCHAR NOT NULL,
+    sequence INTEGER NOT NULL,
+    event_id VARCHAR NOT NULL,
+    event_type VARCHAR NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    command_id VARCHAR NOT NULL,
+    payload JSON NOT NULL,
+    prior_state_fingerprint VARCHAR,
+    resulting_state_fingerprint VARCHAR NOT NULL,
+    PRIMARY KEY (session_id, sequence),
+    UNIQUE (session_id, event_id),
+    UNIQUE (session_id, command_id)
+);
+
+CREATE TABLE IF NOT EXISTS draft_recommendation_runs (
+    recommendation_run_id VARCHAR PRIMARY KEY,
+    session_id VARCHAR NOT NULL,
+    session_version INTEGER NOT NULL,
+    state_fingerprint VARCHAR NOT NULL,
+    engine_config_fingerprint VARCHAR NOT NULL,
+    random_seed BIGINT NOT NULL,
+    simulation_count INTEGER NOT NULL,
+    status VARCHAR NOT NULL,
+    result_fingerprint VARCHAR NOT NULL,
+    result_payload JSON NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS team_outcomes (
     league_season_id VARCHAR NOT NULL,
     team_id VARCHAR NOT NULL,
@@ -631,6 +708,10 @@ class Warehouse:
             "adp_phase5_builds",
             "league_rules",
             "draft_picks",
+            "draft_sessions",
+            "draft_session_players",
+            "draft_events",
+            "draft_recommendation_runs",
             "team_outcomes",
         ]
         if not self.path.exists():
