@@ -21,7 +21,7 @@
 - [x] Implement validated manual ESPN ADP archiving.
 - [x] Add small labeled fixtures and deterministic tests.
 - [ ] Add optional Sleeper league import.
-- [ ] Add league-history package import.
+- [ ] Add a validated league-history package parser and canonical loader; Phase 7 provides quarantine archiving only.
 
 ## Phase 2 — scoring, rules, and identity (complete)
 
@@ -130,8 +130,32 @@
 - [x] Pass the data audit with eight manifests, 12 verified raw files, and empty initialized Phase 6 tables before the first user session.
 - [x] Pass Ruff and the final one-command quality-gate wrapper.
 
-## Future phases
+## Phase 7 — multipage local application (complete)
 
+- [x] Replace the monolithic app tabs with unique `/status`, `/data-center`, `/model-lab`, `/league-setup`, `/draft-room`, `/post-draft`, and `/learning-center` routes.
+- [x] Keep business logic in typed services and leave `app.py` as a thin Streamlit entry point.
+- [x] Add Project Status facts, capability inventory, current blocker, next action, and visible learned/baseline/heuristic/unavailable distinctions.
+- [x] Add Data Center manifest/source/warehouse inventory and a clear live quality report.
+- [x] Allow only validated read-only, idempotent-local, or immutable-archive actions in the Data Center.
+- [x] Keep nflverse/participation/ADP normalization as explicit CLI handoffs rather than silent in-app loads.
+- [x] Keep Sleeper import disabled; allow league-history packages only through a privacy-warning, immutable quarantine archive while parsing, normalization, analysis, and modeling remain unavailable.
+- [x] Add a read-only Model Lab for target/feature definitions, chronological folds, learned-versus-baseline decisions, metrics, residuals, importance, model cards, and player explanations.
+- [x] Omit model training and publication controls from Model Lab.
+- [x] Add normalized league setup editing for team count, draft slot, rounds, starters, FLEX/SUPERFLEX, bench/IR, scoring, and playoff settings.
+- [x] Persist local setups idempotently in DuckDB and verify decomposed columns against normalized rules and their fingerprint on reload.
+- [x] Add deterministic, fingerprint-checked YAML backup and restore without changing the existing `LeagueRules` fingerprint contract.
+- [x] Expand Draft Room with search, position/tier/risk/ADP filters, transparent tiers, likely-gone visibility, player explanations, all rosters, and three recommendation roles when inputs are ready.
+- [x] Preserve state-only manual drafting at 1,367 players while the live recommendation/simulation path remains gated at 0/203 reviewed mappings; retain 43 PK/DEF rows outside coverage.
+- [x] Add deterministic post-draft analysis for exact starter/bench value, positional capital, ADP value, replacement risk, P10/P50/P90 evidence, strengths/weaknesses, fixed-opponent strategy baselines, lineage, JSON export, and limitations.
+- [x] Keep incomplete reports provisional, missing ADP nullable, point-only uncertainty unavailable, and championship probability absent.
+- [x] Add read-only Learning Center discovery and previews for guides and notebook Markdown without executing notebook code.
+- [x] Pass focused Phase 7 evidence: 38 service, repository, and UI tests plus all seven AppTest pages with zero exceptions.
+- [x] Pass the final repository-wide gates: Ruff, strict mypy across 87 source files, and 251 pytest tests in 127.81 seconds.
+- [x] Pass the CLI data audit across eight manifests and 12 verified immutable raw files.
+- [x] Complete real browser navigation and successfully run the live Data Center audit action.
+
+## Publication and operator follow-up
+
+- [ ] Re-run and verify the Phase 6 `main` GitHub Actions workflow after hosted runners recover. The outage-canceled zero-step run is pending, not green; an hourly retry reminder is active.
 - [ ] Operator prerequisite: review canonical FFC identities, rebuild Phase 5, and create a new frozen recommendation-ready session.
-- [ ] Phase 7 (next): multipage UI, Data Center, Model Lab, League Setup, post-draft reporting, exports, and learning-center polish.
-- [ ] Phase 8: descriptive league-history analysis and gated outcome modeling.
+- [ ] Phase 8: import real pseudonymized league histories, build descriptive history analysis, and permit outcome modeling only after its separate data-sufficiency gate passes.
