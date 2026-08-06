@@ -228,6 +228,8 @@ League Setup persists normalized rules and the user's draft slot in DuckDB. Dete
 
 Phase 7 validation passed Ruff, strict mypy across 87 source files, 251 pytest tests in 127.81 seconds, AppTest with zero exceptions across all seven pages, and the CLI data audit across eight manifests and 12 verified immutable files. Real browser QA navigated the multipage app and successfully triggered the live Data Center audit action. See [the Phase 7 evaluation](docs/PHASE_7_STREAMLIT_EVALUATION.md).
 
+Hosted Phase 7 CI is not recorded as green. GitHub Actions was in a reported major outage when PR #7 was opened, and no workflow run registered for the branch. The existing hourly recovery reminder now tracks both the Phase 6 canceled run and the missing Phase 7 run; local validation is not presented as hosted-CI success.
+
 ## Learn the system
 
 - [Architecture](docs/ARCHITECTURE.md)

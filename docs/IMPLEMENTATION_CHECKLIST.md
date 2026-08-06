@@ -156,6 +156,6 @@
 
 ## Publication and operator follow-up
 
-- [ ] Re-run and verify the Phase 6 `main` GitHub Actions workflow after hosted runners recover. The outage-canceled zero-step run is pending, not green; an hourly retry reminder is active.
+- [ ] Re-run and verify the Phase 6 `main` workflow and the missing Phase 7 PR workflow after GitHub Actions recovers. Neither is green; an hourly retry reminder tracks both.
 - [ ] Operator prerequisite: review canonical FFC identities, rebuild Phase 5, and create a new frozen recommendation-ready session.
 - [ ] Phase 8: import real pseudonymized league histories, build descriptive history analysis, and permit outcome modeling only after its separate data-sufficiency gate passes.

@@ -4,7 +4,7 @@ Implementation status: **PASSED**
 
 Local publication gate: **PASSED**
 
-Hosted Phase 6 CI recovery: **PENDING OUTAGE RETRY — NOT GREEN**
+Hosted Phase 6/7 CI recovery: **PENDING OUTAGE RETRY — NOT GREEN**
 
 ## Validated application foundation
 
@@ -111,11 +111,13 @@ The recorded Phase 7 evidence is:
 - CLI data audit: **passed across eight manifests and 12 verified immutable raw files**; and
 - real browser QA: **passed multipage navigation and successfully ran the live Data Center audit action**.
 
-These are local Phase 7 gates. The separate Phase 6 hosted-CI caveat below remains open because its canceled workflow never reached a runner.
+These are local Phase 7 gates. The hosted-CI caveat below remains open because GitHub Actions was reporting a major outage and neither the Phase 6 retry nor a Phase 7 pull-request run completed.
 
 ## Hosted-CI caveat
 
-Phase 6 PR #6 is merged, but its GitHub Actions workflows were canceled during a GitHub runner outage before a runner was assigned. The `main` workflow run `31119062454` completed zero steps with `runner_id=0`; it is **pending retry**, not green. An hourly reminder is active to wait for runner recovery, rerun the workflow, watch it to completion, report the real result, and disable itself after a green run. If a runner executes the workflow and finds a genuine code failure, that failure must be inspected before any code change.
+Phase 6 PR #6 is merged, but its GitHub Actions workflows were canceled during a GitHub runner outage before a runner was assigned. The `main` workflow run `31119062454` completed zero steps with `runner_id=0`; it is **pending retry**, not green. When Phase 7 PR #7 was opened on August 6, 2026, GitHub's status API reported an Actions `major_outage`, and no GitHub Actions workflow run registered for the branch.
+
+An hourly reminder is active to wait for service recovery, verify or rerun the Phase 6 workflow, locate or safely retrigger the Phase 7 workflow if needed, watch both to completion, report the real results, and disable itself only after both phases have green hosted evidence. If a runner executes either workflow and finds a genuine code failure, that failure must be inspected before any code change.
 
 Local validation evidence is not presented as hosted-CI success.
 

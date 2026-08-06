@@ -64,17 +64,18 @@ fantasy-draft data audit
 
 The complete evidence is recorded in [the Phase 7 evaluation](PHASE_7_STREAMLIT_EVALUATION.md).
 
-## Phase 6 hosted-CI retry
+## Phase 6 and Phase 7 hosted-CI retry
 
-Phase 6 PR #6 is merged, but its GitHub Actions evidence is not marked green. GitHub's runner outage canceled the pull-request and `main` workflows before any runner was assigned; `main` run `31119062454` completed zero steps with `runner_id=0`. An hourly reminder is active to:
+Phase 6 PR #6 is merged, but its GitHub Actions evidence is not marked green. GitHub's runner outage canceled the pull-request and `main` workflows before any runner was assigned; `main` run `31119062454` completed zero steps with `runner_id=0`. GitHub Actions was still reporting a major outage when Phase 7 PR #7 opened on August 6, 2026, and no Actions workflow run registered for that branch. An hourly reminder is active to:
 
 1. check GitHub's Actions service status;
-2. rerun the failed/canceled `main` workflow only after runners are accepting jobs;
-3. watch the rerun to completion;
-4. report the real result and disable the reminder after a green run; and
-5. inspect an actual code failure before changing code if the rerun reaches a runner but fails.
+2. rerun the failed/canceled Phase 6 `main` workflow only after runners are accepting jobs;
+3. locate or safely retrigger the missing Phase 7 workflow if GitHub does not enqueue it automatically;
+4. watch both workflows to completion;
+5. report the real results and disable the reminder only after both are green; and
+6. inspect an actual code failure before changing code if either workflow reaches a runner but fails.
 
-The passing local Phase 6 gates remain useful evidence, but they are not a substitute for a completed hosted workflow.
+The passing local Phase 6 and Phase 7 gates remain useful evidence, but they are not a substitute for completed hosted workflows.
 
 ## Phase 8 gate
 

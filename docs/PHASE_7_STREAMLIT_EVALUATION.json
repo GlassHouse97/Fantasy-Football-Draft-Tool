@@ -32,12 +32,19 @@
     "raw_archive_policy": "timestamped_immutable_sha256_manifested"
   },
   "hosted_ci": {
-    "github_actions_status": "pending_outage_retry_not_green",
-    "main_run_id": 31119062454,
-    "main_run_steps": 0,
-    "reminder": "active_hourly_retry_after_runner_recovery",
-    "runner_id": 0,
-    "source_phase": 6
+    "github_actions_status": "major_outage_pending_retry_not_green",
+    "incident_date": "2026-08-06",
+    "phase_6": {
+      "main_run_id": 31119062454,
+      "main_run_steps": 0,
+      "runner_id": 0,
+      "status": "canceled_before_runner_pending_retry"
+    },
+    "phase_7": {
+      "pull_request": 7,
+      "status": "pull_request_run_not_registered_during_outage"
+    },
+    "reminder": "active_hourly_retry_after_actions_recovery_for_phases_6_and_7"
   },
   "implementation_status": "PASSED",
   "league_setup": {
