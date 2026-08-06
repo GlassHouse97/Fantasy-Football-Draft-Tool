@@ -301,6 +301,9 @@ def audit_project_data(config: AppConfig) -> AuditResult:
 
     failures.extend(projection_integrity_issues(config))
     failures.extend(adp_market_integrity_issues(config))
+    from fantasy_draft_ai.draft.repository import DraftRepository
+
+    failures.extend(DraftRepository(config.resolve(config.paths.warehouse)).integrity_issues())
     return AuditResult(len(manifest_paths), verified, tuple(failures), counts)
 
 

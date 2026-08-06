@@ -69,8 +69,17 @@ class LeagueRules(BaseModel):
         roster_size = (
             sum(self.starters.values()) + sum(slot.count for slot in self.flex_slots) + self.bench
         )
-        if self.draft.rounds < roster_size - self.draft.keepers:
-            raise ValueError("Draft rounds do not cover starters, flex slots, bench, and keepers.")
+        expected_rounds = roster_size - self.draft.keepers
+        if expected_rounds < 1 or self.draft.rounds != expected_rounds:
+            raise ValueError(
+                "Draft rounds plus keepers must exactly fill starters, flex slots, and bench."
+            )
+        flex_names = [slot.name for slot in self.flex_slots]
+        if len(flex_names) != len(set(flex_names)):
+            raise ValueError("Flex slot names must be unique.")
+        overlap = set(flex_names) & set(self.starters)
+        if overlap:
+            raise ValueError("Flex slot names cannot duplicate direct starter positions.")
         return self
 
     def canonical_json(self) -> str:
@@ -81,6 +90,17 @@ class LeagueRules(BaseModel):
 
     def fingerprint(self) -> str:
         return hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()
+
+    def scoring_fingerprint(self) -> str:
+        """Hash only scoring inputs so roster variants can share compatible projections."""
+
+        payload = json.dumps(
+            self.scoring.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def slot_eligibility(self) -> dict[str, tuple[str, ...]]:
         """Return each concrete slot name and its valid positions."""

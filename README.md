@@ -25,9 +25,12 @@ This first runnable foundation includes:
 - idempotent, hash-verified normalization of immutable FFC and manual ESPN ADP captures;
 - cutoff-safe ADP movement features with persistence, linear-trend, and exponentially weighted baselines;
 - a transparent next-pick availability distribution with source-reported spread evidence and labeled fallbacks;
+- an event-sourced snake-draft engine with immutable session pools, append-only picks, undo, replacement, and replay hashes;
+- exact ruleset-aware lineup assignment plus a seeded Monte Carlo and transparent recommendation baseline;
+- a runnable manual Streamlit draft room and deterministic draft CLI;
 - tests for data integrity, leakage, chronological evaluation, model selection, publication integrity, ADP idempotency, availability bounds, scoring, rules, and replacement value.
 
-Phases 0 through 5 are complete. The app exposes the validated player-projection board plus a separate ADP movement and next-pick availability view. The current archive contains only one independent production snapshot, so persistence is active while linear and exponentially weighted trends remain unavailable. Availability is an uncalibrated distribution baseline, not a draft recommendation. Supervised ADP models, draft simulation, and recommendation logic remain future work.
+Phases 0 through 6 are complete. The app now includes a persistent manual draft room in addition to projections and ADP availability. The draft engine, seeded simulator, and configurable recommendation baseline pass controlled fixture tests, but live production recommendations remain locked: all 203 draftable QB/RB/WR/TE ADP rows currently lack reviewed canonical player mappings. The other 43 PK/DEF rows remain archived and auditable outside this ruleset's recommendation coverage. Manual picks, undo, replacement, rosters, and replay verification remain available. No championship probability is produced.
 
 ## Local setup (Windows PowerShell)
 
@@ -151,6 +154,46 @@ The validated build has fingerprint `3446513dfe4b122079ba1ed89b6517821d35cac4882
 
 Persistence is ready for all 246 observations. Linear and exponentially weighted trends require at least three dated observations per source player, so neither is active yet. Every availability scale came from source-reported standard deviation; no configured fallback was needed. These probabilities are explicitly uncalibrated because no linked real-draft outcomes are archived, and no supervised movement or availability model is claimed.
 
+## Run the Phase 6 draft room
+
+The Streamlit room can create and restore a local session, record the on-clock team's pick, undo the latest pick, replace an earlier pick without deleting history, show all team rosters, and verify the replayed state after a refresh:
+
+```powershell
+fantasy-draft app
+```
+
+The same state workflow is available through the CLI:
+
+```powershell
+fantasy-draft draft create --rules configs/example_ppr_12_team.yaml --draft-slot 1 --name "My draft" --simulations 64 --seed 42
+fantasy-draft draft list
+fantasy-draft draft show --session-id SESSION_ID
+fantasy-draft draft pick --session-id SESSION_ID --player-id PLAYER_ID --expected-version 0
+# Choose undo or replace using the current version printed by draft show.
+fantasy-draft draft undo --session-id SESSION_ID --expected-version 1
+fantasy-draft draft replace --session-id SESSION_ID --overall-pick 1 --player-id PLAYER_ID --expected-version 1
+fantasy-draft draft verify --session-id SESSION_ID
+fantasy-draft draft recommend --session-id SESSION_ID
+```
+
+Use the current version printed by `draft show` for each mutation. Every command appends an idempotent event and checks optimistic concurrency. The session freezes all 1,367 canonical projection rows and their exact lineage, so a later upstream refresh cannot rewrite an in-progress draft.
+
+The versioned `phase6-baseline-v1` configuration uses 64 default simulation paths, evaluates six candidates, and requires 100% canonical market coverage. Controlled mapped fixtures prove seeded rest-of-draft simulation, distinct balanced/safe-floor/high-upside outputs, configurable component weights, ruleset-sensitive replacement value, and the absence of championship-probability claims. Those fixtures validate the engine; they do not make the current live data recommendation-ready.
+
+Current production status is `identity_mapping_required`: 0 of 203 draftable PPR/12-team QB/RB/WR/TE ADP rows map to canonical projection IDs. The 43 archived PK/DEF rows are outside the configured roster and projection scope, so they do not create an impossible coverage requirement. Names are never used as a fallback join. The manual room is runnable, but `draft recommend` exits unavailable until the operator reviews identities and rebuilds Phase 5:
+
+```powershell
+fantasy-draft data review-identities
+fantasy-draft data apply-identity-overrides data\processed\identity\identity_review_queue.csv
+fantasy-draft data review-identities
+fantasy-draft data load-adp
+fantasy-draft models build-adp-baselines --availability-config configs/adp_availability.yaml --output docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.md
+fantasy-draft data audit
+fantasy-draft status
+```
+
+The verified Phase 6 implementation gates include Ruff, strict mypy across 69 source files, 210 passing pytest tests in 77.23 seconds, a Streamlit AppTest run with zero exceptions across all six tabs, a passing data audit covering eight manifests and 12 verified immutable raw files, and the passing one-command quality-gate wrapper.
+
 ## Learn the system
 
 - [Architecture](docs/ARCHITECTURE.md)
@@ -166,6 +209,7 @@ Persistence is ready for all 246 observations. Linear and exponentially weighted
 - [How to read a model card](docs/learning/12_how_to_read_a_model_card.md)
 - [ADP movement and availability](docs/learning/08_adp_movement_and_availability.md)
 - [Phase 5 ADP and availability evaluation](docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.md)
+- [Phase 6 draft-engine evaluation](docs/PHASE_6_DRAFT_ENGINE_EVALUATION.md)
 - [Next steps](docs/NEXT_STEPS.md)
 
 ## Data boundaries

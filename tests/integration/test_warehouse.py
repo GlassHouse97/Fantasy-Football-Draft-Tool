@@ -36,6 +36,10 @@ def test_warehouse_initialization_is_idempotent(tmp_path: Path) -> None:
         "adp_phase5_builds": 0,
         "league_rules": 0,
         "draft_picks": 0,
+        "draft_sessions": 0,
+        "draft_session_players": 0,
+        "draft_events": 0,
+        "draft_recommendation_runs": 0,
         "team_outcomes": 0,
     }
     with warehouse.connect(read_only=True) as connection:

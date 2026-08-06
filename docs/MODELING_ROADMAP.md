@@ -12,8 +12,9 @@ The project climbs a model ladder. A more complex model is adopted only when it 
 8. Project stat components where practical, then apply the ruleset scoring engine. Keep direct fantasy-point prediction as a benchmark.
 9. **Complete foundation:** Archive immutable dated ADP snapshots and build honest movement features plus persistence, linear, and exponentially weighted baselines with explicit readiness status.
 10. **Complete transparent baseline:** Estimate conditional next-pick availability from source spread with labeled fallback assumptions. Calibration and supervised ML remain unavailable until the sample is sufficient.
-11. **Next:** Build an event-sourced snake-draft state, validate roster legality and replay, and only then add Monte Carlo rest-of-draft comparisons.
-12. Train playoff or championship outcomes only after a documented real-history sample gate is met.
+11. **Complete engine:** Build an event-sourced snake-draft state, exact lineup assignment, transparent ruleset-aware scoring, and seeded Monte Carlo rest-of-draft comparisons. Production activation remains gated by canonical market mappings.
+12. **Next:** Polish the Phase 7 application, data-center, league-setup, post-draft, export, and learning workflows around the validated service boundaries.
+13. Train playoff or championship outcomes only after a documented real-history sample gate is met.
 
 ## Phase 3 evidence
 
@@ -41,4 +42,12 @@ The build persists 246 cutoff-safe movement features and 738 baseline forecast r
 
 All 246 availability parameter rows derive their scale from source-reported standard deviation, so zero configured fallbacks are active in this build. The continuity-corrected pick distribution is conditional on the player still being available at the current pick. It is explicitly uncalibrated because no linked real-draft outcomes are archived. A supervised movement or availability model remains unavailable because one independent capture cannot support chronological train/validation/test evaluation. See [the Phase 5 evaluation report](PHASE_5_ADP_AVAILABILITY_EVALUATION.md).
 
-Phase 6 is next. It may consume player projections and Phase 5 availability as separate inputs only after it establishes an event-sourced draft-state boundary. Phase 5 itself makes no recommendation and performs no simulation.
+## Phase 6 evidence
+
+Phase 6 now freezes canonical total-points projections, reviewed market evidence, rules, scoring compatibility, upstream lineage, engine configuration, seed, and simulation count into each local draft session. Picks, undo, and replacement are append-only events protected by idempotent command IDs, optimistic versions, and linked replay hashes. Exact lineup assignment supports overlapping flexible eligibility without a greedy slot-order dependency.
+
+The versioned `phase6-baseline-v1` configuration has fingerprint `17e0337939917fcfcb08ec764d88b43a7001e4c3c776c3ac8597390cb54ad9c9`, defaults to 64 simulation paths, evaluates six candidates, and requires 100% mapping across the compatible market scope. Seeded fixtures prove order-independent simulation, bounded opponent roster/run adjustments, deterministic point-only rows, and recomputable balanced/safe-floor/high-upside scores. A controlled 2-WR/1-FLEX versus 3-WR/2-FLEX comparison changes the replacement boundary without hard-coding a preferred player.
+
+This is engine validation, not a claim that current production recommendations are active. The live pool has 1,367 canonical projection rows and 203 draftable QB/RB/WR/TE ADP rows, but none of those market rows currently have a reviewed canonical player ID. The 43 remaining PK/DEF rows stay in the Phase 5 archive outside this ruleset's recommendation coverage. Manual state creation, picks, undo, replacement, rosters, and replay are available; recommendations and Monte Carlo return `identity_mapping_required`. Display names are never used to bridge the gap.
+
+No recommendation payload contains or implies a championship probability. See [the Phase 6 evaluation](PHASE_6_DRAFT_ENGINE_EVALUATION.md). Phase 7 is next for application/data-center/post-draft polish, while identity review is the operator prerequisite for live Phase 6 activation.

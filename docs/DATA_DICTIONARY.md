@@ -174,11 +174,35 @@ One deterministic logical build record per `build_fingerprint`. It binds the sna
 
 ## `league_rules`
 
-One row per league-season configuration. `normalized_ruleset_json` is key-sorted canonical JSON; `ruleset_fingerprint` is its SHA-256 digest.
+One row per imported league-season configuration. `normalized_ruleset_json` is key-sorted canonical JSON; `ruleset_fingerprint` is its SHA-256 digest. A live Phase 6 session also freezes its exact rules JSON and full/scoring-only fingerprints in `draft_sessions`, so replay does not depend on a later configuration edit.
 
 ## `draft_picks`
 
-One row per overall pick. Team identifiers are pseudonymous. The ADP snapshot is nullable when it is unknown.
+One row per materialized imported or completed-draft pick. Team identifiers are pseudonymous. The ADP snapshot is nullable when it is unknown. This table is not the Phase 6 live-state authority because it cannot retain undo and replacement history; `draft_events` is authoritative for an active local session.
+
+## `draft_sessions`
+
+One row per local event-sourced session. It stores the session label/status, canonical rules JSON, full rules and scoring-only fingerprints, team count, rounds, user slot, frozen Phase 4 run ID, optional Phase 5 build fingerprint, player-pool and engine-config fingerprints, pool/mapped-market counts, recommendation readiness and message, random seed, simulation count, current event version, current state fingerprint, and timestamps.
+
+The recommendation status may truthfully be `identity_mapping_required` while the manual state engine remains usable. The current production preparation freezes 1,367 canonical projections but has 0 mapped market rows from 203 draftable QB/RB/WR/TE ADP observations. Another 43 PK/DEF observations remain archived and auditable outside the active ruleset's coverage denominator.
+
+## `draft_session_players`
+
+One immutable player row per `(session_id, player_id)`. The row freezes canonical display/position, total-points P10/P50/P90, prediction status/source/method, and nullable reviewed market source, snapshot, capture time, ADP location, availability scale/evidence, and mapping confidence. `player_payload` is the canonical replay representation. The session pool fingerprint covers every frozen field in canonical player-ID order.
+
+Market evidence joins only through reviewed canonical `player_id`. A name match is never accepted. Duplicate canonical market mappings, mapped players absent from the projection board, position conflicts, incompatible season/team/scoring scopes, and insufficient mapping coverage all prevent recommendation readiness.
+
+## `draft_events`
+
+Append-only events keyed by `(session_id, sequence)`. Each event has a unique event ID and idempotent command ID, event type, timestamp, canonical JSON payload, prior-state fingerprint, and resulting-state fingerprint. Supported Phase 6 events are session start, pick, undo latest pick, and replace an active pick. Stored events are never deleted or rewritten during normal operation.
+
+Replay derives snake ownership, current pick, every roster, availability, history, and completion from this stream. It rejects sequence gaps, stale fingerprint links, duplicate players, incorrect team ownership, illegal roster capacity, and inconsistent session metadata.
+
+## `draft_recommendation_runs`
+
+One persisted result per deterministic recommendation attempt. It binds the session/event version and state fingerprint to the engine-config fingerprint, random seed, simulation count, availability status, result fingerprint, canonical result payload, and creation time. Candidate roles and their raw/normalized components, simulation summaries, explanations, risks, limitations, and upstream evidence live inside the hashed result payload.
+
+The table does not imply production readiness. Controlled fixtures prove the engine, while current live recommendations remain unavailable until all required compatible ADP rows have reviewed canonical mappings. No championship-probability field is produced.
 
 ## `team_outcomes`
 

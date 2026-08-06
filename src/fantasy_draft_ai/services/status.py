@@ -7,11 +7,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import duckdb
+import yaml
 
 from fantasy_draft_ai.config import AppConfig
-from fantasy_draft_ai.services.adp_market import adp_market_status
+from fantasy_draft_ai.draft.repository import DraftRepository
+from fantasy_draft_ai.recommendations.config import load_draft_engine_config
+from fantasy_draft_ai.rules.models import LeagueRules
+from fantasy_draft_ai.services.adp_market import adp_market_status, load_adp_market_board
+from fantasy_draft_ai.services.draft_room import DraftRoomReadiness, prepare_draft_room
 from fantasy_draft_ai.services.projections import (
     ProjectionBoardStatus,
+    load_projection_board,
     projection_board_status,
 )
 
@@ -27,6 +33,7 @@ def project_status(
     config: AppConfig,
     *,
     phase4_status: ProjectionBoardStatus | None = None,
+    draft_readiness: DraftRoomReadiness | None = None,
 ) -> list[StatusItem]:
     raw_root = config.resolve(config.paths.raw_dir)
     ffc_files = sorted((raw_root / "ffc_adp").glob("*.json"))
@@ -268,6 +275,59 @@ def project_status(
             f"calibration {phase5_status.calibration_status}"
         )
 
+    current_draft_readiness = draft_readiness
+    if current_draft_readiness is None and current_phase4_status.available:
+        try:
+            reference_path = config.project_root / "configs" / "example_ppr_12_team.yaml"
+            with reference_path.open(encoding="utf-8") as handle:
+                reference_rules = LeagueRules.model_validate(yaml.safe_load(handle))
+            engine_config = load_draft_engine_config(
+                config.project_root / "configs" / "draft_engine.yaml"
+            )
+            current_draft_readiness = prepare_draft_room(
+                load_projection_board(config),
+                load_adp_market_board(config),
+                rules=reference_rules,
+                projection_reference_rules=reference_rules,
+                required_market_coverage=engine_config.market_coverage_required,
+            ).readiness
+        except (OSError, ValueError, TypeError, duckdb.Error):
+            current_draft_readiness = None
+
+    draft_state_available = bool(
+        current_draft_readiness is not None and current_draft_readiness.state_ready
+    )
+    draft_state_status = (
+        current_draft_readiness.state_message
+        if current_draft_readiness is not None
+        else "unavailable until a compatible projection pool validates"
+    )
+    recommendation_available = bool(
+        current_draft_readiness is not None and current_draft_readiness.recommendation_ready
+    )
+    recommendation_message = (
+        current_draft_readiness.recommendation_message
+        if current_draft_readiness is not None
+        else "unavailable until draft inputs validate"
+    )
+    session_count = 0
+    replay_issues: tuple[str, ...] = ()
+    if warehouse.exists():
+        try:
+            repository = DraftRepository(warehouse)
+            sessions = repository.list_sessions()
+            session_count = len(sessions)
+            replay_issues = repository.integrity_issues()
+        except (OSError, ValueError, TypeError, duckdb.Error):
+            replay_issues = ("Draft persistence could not be verified.",)
+    replay_status = (
+        "warehouse not initialized"
+        if not warehouse.exists()
+        else replay_issues[0]
+        if replay_issues
+        else "append-only replay checks passed"
+    )
+
     return [
         StatusItem(
             "Warehouse",
@@ -305,6 +365,26 @@ def project_status(
         StatusItem("Next-pick availability", availability_status, phase5_status.available),
         StatusItem("Supervised ADP model", supervised_status, False),
         StatusItem("Historical league outcome model", "insufficient uploaded histories", False),
+        StatusItem("Draft state engine", draft_state_status, draft_state_available),
+        StatusItem(
+            "Active draft session",
+            f"{session_count} persisted session(s)" if session_count else "no session created yet",
+            bool(session_count),
+        ),
+        StatusItem(
+            "Draft event replay integrity",
+            replay_status,
+            warehouse.exists() and not replay_issues,
+        ),
+        StatusItem(
+            "Draft recommendation score",
+            recommendation_message,
+            recommendation_available,
+        ),
+        StatusItem(
+            "Monte Carlo rest-of-draft simulation",
+            recommendation_message,
+            recommendation_available,
+        ),
         StatusItem("Championship probabilities", "disabled", False),
-        StatusItem("Draft recommendation score", "not implemented", False),
     ]

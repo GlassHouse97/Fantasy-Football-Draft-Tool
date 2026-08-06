@@ -35,6 +35,7 @@ documented source or manual upload
 - `data/warehouse/fantasy_football.duckdb` is the local analytical warehouse.
 - `models/artifacts/<run_id>/<publication_id>/` contains serialized estimators, while `models/reports/<run_id>/<publication_id>/` contains the authoritative attempt-scoped evaluation and registry.
 - `docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.*` contains the reproducible Phase 5 evidence mirror; canonical snapshots, features, forecasts, parameters, and build metadata remain in DuckDB.
+- DuckDB stores Phase 6 sessions, frozen player pools, append-only events, replay hashes, and recommendation-run payloads; local refreshes never make Streamlit session state authoritative.
 - Generated data and models are ignored by Git; templates and test fixtures are not.
 
 The warehouse uses explicit canonical tables even before every importer exists. This prevents early source-specific column names from becoming the application contract.
@@ -101,7 +102,7 @@ Publication uses one atomic integrity boundary. All six `player_projection_*` ta
 
 The deterministic `run_id` names a model/data contract, while a unique `publication_id` names each immutable forced training attempt. DuckDB and the registered hashes are authoritative. Generated evaluation and registry files live under `models/reports/<run_id>/<publication_id>/`; artifact, card, and plot paths use the same attempt scope and are hashed. `docs/PHASE_4_MODEL_EVALUATION.*` and `models/registry.json` are convenience mirrors refreshed only after the verified transaction commits. Audit, status, and the projection service require exactly one current complete run and refuse stale, partial, orphaned, or tampered outputs. A changed Phase 3 feature/build or baseline-report fingerprint invalidates the dependent Phase 4 publication.
 
-The Streamlit app reads this contract through a read-only service. When integrity passes, it exposes the 2026 board, position/search/target filters, selected method, intervals, explanations, and run lineage. Phase 4 itself remains player-outcome-only; Phase 5 supplies market movement and availability through a separate service and tab. Neither phase produces a draft recommendation or draft engine. See [the Phase 4 evaluation report](PHASE_4_MODEL_EVALUATION.md).
+The Streamlit app reads this contract through a read-only service. When integrity passes, it exposes the 2026 board, position/search/target filters, selected method, intervals, explanations, and run lineage. Phase 4 itself remains player-outcome-only; Phase 5 supplies market movement and availability through a separate service and tab. Phase 6 consumes those outputs through a separately validated frozen-pool boundary. See [the Phase 4 evaluation report](PHASE_4_MODEL_EVALUATION.md).
 
 ## Phase 5 ADP movement and availability
 
@@ -117,7 +118,27 @@ Identity remains evidence-aware. A reviewed `player_source_mappings` record may 
 
 `adp_phase5_builds` binds these tables to the snapshot-data and availability-configuration fingerprints, counts, capability statuses, and a quality report. The validated build fingerprint is `3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b`; its snapshot fingerprint is `44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2`. It contains one independent FFC snapshot, 246 observations and movement features, 738 forecast rows, and 246 availability parameters. Persistence is ready for 246 rows; linear and exponentially weighted trends have zero ready rows. All availability scales use source standard deviation and zero use fallback assumptions.
 
-The read-only market service calculates the probability that a still-available player is selected before the user's next pick. This distribution baseline is explicitly uncalibrated because no linked real-draft outcomes exist. Supervised movement and availability remain unavailable because one independent dated capture cannot support chronological training and validation. Draft state, recommendation, and Monte Carlo simulation begin in Phase 6 and are not part of this contract. See [the Phase 5 evaluation report](PHASE_5_ADP_AVAILABILITY_EVALUATION.md).
+The read-only market service calculates the probability that a still-available player is selected before the user's next pick. This distribution baseline is explicitly uncalibrated because no linked real-draft outcomes exist. Supervised movement and availability remain unavailable because one independent dated capture cannot support chronological training and validation. Phase 6 may consume this evidence only through reviewed canonical IDs; Phase 5 itself still makes no recommendation. See [the Phase 5 evaluation report](PHASE_5_ADP_AVAILABILITY_EVALUATION.md).
+
+## Phase 6 event-sourced draft engine
+
+Phase 6 is implemented as a deterministic decision engine around frozen upstream evidence. The draft-room service verifies the active Phase 4 rules reference, compares scoring-only fingerprints so compatible roster variants can share projections, selects only matching ADP season/team/scoring scopes, and joins market evidence strictly by reviewed canonical `player_id`. Display names are presentation fields and never fallback keys. A session can start in state-only mode when market mapping is incomplete.
+
+Session creation freezes all 1,367 canonical total-points projection rows, any compatible reviewed market evidence, the Phase 4 and Phase 5 lineage, exact rules, engine-config fingerprint, seed, and simulation count. This pool is immutable for the life of the session. A later projection or ADP rebuild affects only newly created sessions.
+
+The event stream is authoritative:
+
+- `session_started`, `pick_made`, `pick_undone`, and `pick_replaced` records are appended, never rewritten;
+- each mutation carries a unique command ID and expected version, preventing Streamlit reruns or stale callers from duplicating work;
+- every event binds the prior and resulting state fingerprints;
+- replay validates sequence, snake ownership, duplicate prevention, roster legality, pool fingerprint, metadata version, and final state hash;
+- an undo targets only the latest active pick, while replacement retains the original event and pick ownership.
+
+Roster assignment uses an exact legal allocation across direct starters, FLEX/SUPERFLEX slots, and bench rather than a greedy slot order. The same rules contract feeds replacement levels and simulation roster evaluation.
+
+The `phase6-baseline-v1` configuration is versioned and fingerprinted as `17e0337939917fcfcb08ec764d88b43a7001e4c3c776c3ac8597390cb54ad9c9`. It defaults to 64 seeded rest-of-draft paths, evaluates six candidates, caps work, and requires 100% compatible market mapping. Simulation samples opponent choice from frozen ADP distributions, applies bounded roster-need and positional-run adjustments, and keeps point-only projections deterministic. The recommendation engine exposes balanced, safe-floor, and high-upside roles with recomputable component contributions. It returns a draft recommendation score, not a calibrated win or championship probability.
+
+Controlled mapped fixtures validate simulation and recommendation behavior, including ruleset-sensitive replacement value. Production remains deliberately gated: the current PPR/12-team market has 0 reviewed mappings across 203 draftable QB/RB/WR/TE rows. The other 43 archived PK/DEF rows stay auditable but are excluded from this ruleset's coverage denominator because no corresponding roster slots or projections exist. The manual Streamlit room and CLI remain fully usable for session creation, picks, undo, replacement, rosters, and replay verification; recommendation and Monte Carlo commands remain unavailable until canonical identity review and a new frozen session. See [the Phase 6 evaluation](PHASE_6_DRAFT_ENGINE_EVALUATION.md).
 
 ## Interfaces chosen in Phase 0
 
