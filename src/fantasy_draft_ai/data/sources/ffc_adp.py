@@ -64,6 +64,8 @@ def normalize_ffc_payload(
                 "max_pick": player.get("low"),
                 "sample_size": player.get("times_drafted") or player.get("drafts"),
                 "movement": player.get("change"),
+                "source_stddev": player.get("stdev"),
+                "source_movement_horizon": None,
                 "raw_source_row_id": str(player.get("player_id") or index),
                 "mapping_confidence": "unresolved",
             }

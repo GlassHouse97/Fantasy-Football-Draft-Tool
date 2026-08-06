@@ -380,9 +380,113 @@ CREATE TABLE IF NOT EXISTS adp_snapshots (
     max_pick DOUBLE,
     sample_size INTEGER,
     movement DOUBLE,
+    source_stddev DOUBLE,
+    source_movement_horizon VARCHAR,
     raw_source_row_id VARCHAR NOT NULL,
     mapping_confidence VARCHAR NOT NULL,
     PRIMARY KEY (snapshot_id, raw_source_row_id)
+);
+
+CREATE TABLE IF NOT EXISTS adp_snapshot_metadata (
+    snapshot_id VARCHAR PRIMARY KEY,
+    source VARCHAR NOT NULL,
+    captured_at TIMESTAMPTZ NOT NULL,
+    season INTEGER NOT NULL,
+    scoring_format VARCHAR NOT NULL,
+    team_count INTEGER NOT NULL,
+    position_scope VARCHAR NOT NULL,
+    raw_sha256 VARCHAR NOT NULL,
+    raw_relative_path VARCHAR NOT NULL,
+    source_dataset_ids JSON NOT NULL,
+    row_count INTEGER NOT NULL,
+    loaded_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS adp_movement_features (
+    snapshot_id VARCHAR NOT NULL,
+    raw_source_row_id VARCHAR NOT NULL,
+    entity_key VARCHAR NOT NULL,
+    player_id VARCHAR,
+    source VARCHAR NOT NULL,
+    captured_at TIMESTAMPTZ NOT NULL,
+    season INTEGER NOT NULL,
+    scoring_format VARCHAR NOT NULL,
+    team_count INTEGER NOT NULL,
+    average_pick DOUBLE,
+    prior_snapshot_id VARCHAR,
+    prior_observed_at TIMESTAMPTZ,
+    prior_average_pick DOUBLE,
+    elapsed_days DOUBLE,
+    change_1d DOUBLE,
+    change_3d DOUBLE,
+    change_7d DOUBLE,
+    change_14d DOUBLE,
+    velocity_per_day DOUBLE,
+    acceleration_per_day2 DOUBLE,
+    rolling_volatility_14d DOUBLE,
+    source_spread DOUBLE,
+    observation_count INTEGER,
+    source_count INTEGER,
+    identity_observation_count INTEGER,
+    feature_version VARCHAR NOT NULL,
+    data_fingerprint VARCHAR NOT NULL,
+    PRIMARY KEY (snapshot_id, raw_source_row_id)
+);
+
+CREATE TABLE IF NOT EXISTS adp_movement_forecasts (
+    snapshot_id VARCHAR NOT NULL,
+    raw_source_row_id VARCHAR NOT NULL,
+    baseline_name VARCHAR NOT NULL,
+    forecast_horizon_days INTEGER NOT NULL,
+    target_at TIMESTAMPTZ NOT NULL,
+    predicted_average_pick DOUBLE,
+    predicted_change DOUBLE,
+    history_count INTEGER,
+    status VARCHAR NOT NULL,
+    reason VARCHAR NOT NULL,
+    model_version VARCHAR NOT NULL,
+    data_fingerprint VARCHAR NOT NULL,
+    PRIMARY KEY (
+        snapshot_id, raw_source_row_id, baseline_name, forecast_horizon_days
+    )
+);
+
+CREATE TABLE IF NOT EXISTS adp_availability_parameters (
+    snapshot_id VARCHAR NOT NULL,
+    raw_source_row_id VARCHAR NOT NULL,
+    entity_key VARCHAR NOT NULL,
+    player_id VARCHAR,
+    source VARCHAR NOT NULL,
+    captured_at TIMESTAMPTZ NOT NULL,
+    average_pick DOUBLE,
+    scale DOUBLE,
+    evidence_method VARCHAR NOT NULL,
+    fallback_group VARCHAR,
+    source_sample_size INTEGER,
+    min_pick DOUBLE,
+    max_pick DOUBLE,
+    mapping_confidence VARCHAR NOT NULL,
+    method_version VARCHAR NOT NULL,
+    data_fingerprint VARCHAR NOT NULL,
+    PRIMARY KEY (snapshot_id, raw_source_row_id)
+);
+
+CREATE TABLE IF NOT EXISTS adp_phase5_builds (
+    build_fingerprint VARCHAR PRIMARY KEY,
+    snapshot_data_fingerprint VARCHAR NOT NULL,
+    availability_config_fingerprint VARCHAR NOT NULL,
+    snapshot_count INTEGER NOT NULL,
+    observation_rows INTEGER NOT NULL,
+    movement_feature_rows INTEGER NOT NULL,
+    movement_forecast_rows INTEGER NOT NULL,
+    availability_parameter_rows INTEGER NOT NULL,
+    persistence_ready_rows INTEGER NOT NULL,
+    linear_ready_rows INTEGER NOT NULL,
+    ew_ready_rows INTEGER NOT NULL,
+    calibration_status VARCHAR NOT NULL,
+    supervised_status VARCHAR NOT NULL,
+    built_at TIMESTAMPTZ NOT NULL,
+    report_payload JSON NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS league_rules (
@@ -472,6 +576,8 @@ ALTER TABLE baseline_predictions ADD COLUMN IF NOT EXISTS target_data_fingerprin
 ALTER TABLE baseline_predictions ADD COLUMN IF NOT EXISTS build_fingerprint VARCHAR;
 ALTER TABLE baseline_evaluation_metadata ADD COLUMN IF NOT EXISTS target_data_fingerprint VARCHAR;
 ALTER TABLE baseline_evaluation_metadata ADD COLUMN IF NOT EXISTS build_fingerprint VARCHAR;
+ALTER TABLE adp_snapshots ADD COLUMN IF NOT EXISTS source_stddev DOUBLE;
+ALTER TABLE adp_snapshots ADD COLUMN IF NOT EXISTS source_movement_horizon VARCHAR;
 """
 
 
@@ -518,6 +624,11 @@ class Warehouse:
             "player_projection_evaluation_metadata",
             "player_projection_board",
             "adp_snapshots",
+            "adp_snapshot_metadata",
+            "adp_movement_features",
+            "adp_movement_forecasts",
+            "adp_availability_parameters",
+            "adp_phase5_builds",
             "league_rules",
             "draft_picks",
             "team_outcomes",

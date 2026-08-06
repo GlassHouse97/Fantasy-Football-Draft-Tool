@@ -1,0 +1,28 @@
+availability:
+  # A source's reported standard deviation always wins. When only a high/low
+  # range exists, treat that range as an approximate central-95% width.
+  range_sigma_divisor: 4.0
+  minimum_standard_deviation: 1.0
+  fallback_assumption_label: configured_position_draft_range_assumption
+  # These are transparent starting assumptions, not learned or calibrated facts.
+  fallback_bands:
+    DEFAULT:
+      - {min_pick: 1, max_pick: 60, standard_deviation: 8}
+      - {min_pick: 60, max_pick: 120, standard_deviation: 12}
+      - {min_pick: 120, max_pick: null, standard_deviation: 18}
+    QB:
+      - {min_pick: 1, max_pick: 60, standard_deviation: 9}
+      - {min_pick: 60, max_pick: 120, standard_deviation: 14}
+      - {min_pick: 120, max_pick: null, standard_deviation: 20}
+    RB:
+      - {min_pick: 1, max_pick: 60, standard_deviation: 7}
+      - {min_pick: 60, max_pick: 120, standard_deviation: 12}
+      - {min_pick: 120, max_pick: null, standard_deviation: 18}
+    WR:
+      - {min_pick: 1, max_pick: 60, standard_deviation: 8}
+      - {min_pick: 60, max_pick: 120, standard_deviation: 12}
+      - {min_pick: 120, max_pick: null, standard_deviation: 18}
+    TE:
+      - {min_pick: 1, max_pick: 60, standard_deviation: 9}
+      - {min_pick: 60, max_pick: 120, standard_deviation: 14}
+      - {min_pick: 120, max_pick: null, standard_deviation: 20}

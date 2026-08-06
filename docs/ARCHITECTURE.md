@@ -34,6 +34,7 @@ documented source or manual upload
 - `data/processed/` contains reproducible derived Parquet files.
 - `data/warehouse/fantasy_football.duckdb` is the local analytical warehouse.
 - `models/artifacts/<run_id>/<publication_id>/` contains serialized estimators, while `models/reports/<run_id>/<publication_id>/` contains the authoritative attempt-scoped evaluation and registry.
+- `docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.*` contains the reproducible Phase 5 evidence mirror; canonical snapshots, features, forecasts, parameters, and build metadata remain in DuckDB.
 - Generated data and models are ignored by Git; templates and test fixtures are not.
 
 The warehouse uses explicit canonical tables even before every importer exists. This prevents early source-specific column names from becoming the application contract.
@@ -100,7 +101,23 @@ Publication uses one atomic integrity boundary. All six `player_projection_*` ta
 
 The deterministic `run_id` names a model/data contract, while a unique `publication_id` names each immutable forced training attempt. DuckDB and the registered hashes are authoritative. Generated evaluation and registry files live under `models/reports/<run_id>/<publication_id>/`; artifact, card, and plot paths use the same attempt scope and are hashed. `docs/PHASE_4_MODEL_EVALUATION.*` and `models/registry.json` are convenience mirrors refreshed only after the verified transaction commits. Audit, status, and the projection service require exactly one current complete run and refuse stale, partial, orphaned, or tampered outputs. A changed Phase 3 feature/build or baseline-report fingerprint invalidates the dependent Phase 4 publication.
 
-The Streamlit app reads this contract through a read-only service. When integrity passes, it exposes the 2026 board, position/search/target filters, selected method, intervals, explanations, and run lineage. It does not expose ADP movement, next-pick availability, a draft recommendation, or a draft engine; those remain separate later phases. See [the Phase 4 evaluation report](PHASE_4_MODEL_EVALUATION.md).
+The Streamlit app reads this contract through a read-only service. When integrity passes, it exposes the 2026 board, position/search/target filters, selected method, intervals, explanations, and run lineage. Phase 4 itself remains player-outcome-only; Phase 5 supplies market movement and availability through a separate service and tab. Neither phase produces a draft recommendation or draft engine. See [the Phase 4 evaluation report](PHASE_4_MODEL_EVALUATION.md).
+
+## Phase 5 ADP movement and availability
+
+Phase 5 is a validated transparent foundation, not a supervised model. `fantasy-draft data load-adp` discovers FFC and manual ESPN manifests, verifies project-relative raw files and SHA-256 hashes, rejects conflicting snapshot scope, and collapses duplicate manifests that identify the same raw capture. Synthetic fixture manifests are skipped unless explicitly requested. A stable snapshot identity binds source, season, scoring format, team count, position scope, capture time, and raw hash. Snapshot metadata and rows are upserted transactionally, so identical repeated loads preserve counts and fingerprints.
+
+Identity remains evidence-aware. A reviewed `player_source_mappings` record may supply a canonical player ID; otherwise the row keeps a nullable `player_id`, recorded mapping confidence, and stable source identity. The validated FFC capture therefore retains 246 unresolved rows without joining on display name. Market calculations operate on the source identity until an auditable player mapping exists.
+
+`fantasy-draft models build-adp-baselines` reads only verified production snapshots and builds three separate contracts:
+
+- `adp_movement_features` contains as-of features such as prior ADP, elapsed days, fixed-horizon changes, velocity, acceleration, volatility, source spread, and observation counts. Every row is calculated using observations at or before its capture cutoff.
+- `adp_movement_forecasts` records one-day persistence, linear-trend, and exponentially weighted trend results, including explicit unavailable status and reason. Persistence works with one observation; both trend methods require at least three dated observations for the same source identity.
+- `adp_availability_parameters` stores the location and scale used by a continuity-corrected normal pick distribution. Source standard deviation wins, min/max-derived scale is second, and the versioned configuration fallback is used only when neither source measure exists.
+
+`adp_phase5_builds` binds these tables to the snapshot-data and availability-configuration fingerprints, counts, capability statuses, and a quality report. The validated build fingerprint is `3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b`; its snapshot fingerprint is `44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2`. It contains one independent FFC snapshot, 246 observations and movement features, 738 forecast rows, and 246 availability parameters. Persistence is ready for 246 rows; linear and exponentially weighted trends have zero ready rows. All availability scales use source standard deviation and zero use fallback assumptions.
+
+The read-only market service calculates the probability that a still-available player is selected before the user's next pick. This distribution baseline is explicitly uncalibrated because no linked real-draft outcomes exist. Supervised movement and availability remain unavailable because one independent dated capture cannot support chronological training and validation. Draft state, recommendation, and Monte Carlo simulation begin in Phase 6 and are not part of this contract. See [the Phase 5 evaluation report](PHASE_5_ADP_AVAILABILITY_EVALUATION.md).
 
 ## Interfaces chosen in Phase 0
 

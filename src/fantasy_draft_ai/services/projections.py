@@ -867,7 +867,13 @@ def _registered_files_match(project_root: Path, row: tuple[Any, ...]) -> bool:
         str(artifact_path),
         str(artifact_hash),
         int(artifact_size),
-    ) and _registered_file_matches(project_root, str(card_path), str(card_hash), None)
+    ) and _registered_file_matches(
+        project_root,
+        str(card_path),
+        str(card_hash),
+        None,
+        canonical_text=True,
+    )
 
 
 def _registered_output_files_match(project_root: Path, run_payload: dict[str, Any]) -> bool:
@@ -882,15 +888,21 @@ def _registered_output_files_match(project_root: Path, run_payload: dict[str, An
     ):
         return False
     required = (
-        (report_files.get("json_path"), report_files.get("json_sha256")),
-        (report_files.get("markdown_path"), report_files.get("markdown_sha256")),
-        (registry.get("path"), registry.get("sha256")),
+        (report_files.get("json_path"), report_files.get("json_sha256"), False),
+        (report_files.get("markdown_path"), report_files.get("markdown_sha256"), True),
+        (registry.get("path"), registry.get("sha256"), False),
     )
     required_files_match = all(
         path is not None
         and digest is not None
-        and _registered_file_matches(project_root, str(path), str(digest), None)
-        for path, digest in required
+        and _registered_file_matches(
+            project_root,
+            str(path),
+            str(digest),
+            None,
+            canonical_text=canonical_text,
+        )
+        for path, digest, canonical_text in required
     )
     plots_match = all(
         isinstance(metadata, dict)
@@ -912,6 +924,8 @@ def _registered_file_matches(
     registered_path: str,
     expected_hash: str,
     expected_size: int | None,
+    *,
+    canonical_text: bool = False,
 ) -> bool:
     candidate = Path(registered_path)
     if candidate.is_absolute():
@@ -927,9 +941,12 @@ def _registered_file_matches(
     if expected_size is not None and resolved.stat().st_size != expected_size:
         return False
     digest = hashlib.sha256()
-    with resolved.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
+    if canonical_text:
+        digest.update(resolved.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
+    else:
+        with resolved.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
     return digest.hexdigest() == expected_hash
 
 

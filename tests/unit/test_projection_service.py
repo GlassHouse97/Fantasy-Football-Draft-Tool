@@ -18,12 +18,33 @@ from fantasy_draft_ai.data.audit import audit_project_data
 from fantasy_draft_ai.data.warehouse import Warehouse
 from fantasy_draft_ai.models.player_projection import train as training
 from fantasy_draft_ai.models.player_projection.repository import projection_integrity_issues
+from fantasy_draft_ai.services import projections
 from fantasy_draft_ai.services.projections import (
     TARGET_FANTASY_POINTS_PER_GAME,
     load_projection_board,
     projection_board_status,
 )
 from fantasy_draft_ai.services.status import project_status
+
+
+def test_projection_service_text_hash_is_checkout_newline_independent(tmp_path: Path) -> None:
+    card = tmp_path / "card.md"
+    card.write_bytes(b"line one\r\nline two\r\n")
+    expected = hashlib.sha256(b"line one\nline two\n").hexdigest()
+
+    assert projections._registered_file_matches(
+        tmp_path,
+        card.name,
+        expected,
+        None,
+        canonical_text=True,
+    )
+    assert not projections._registered_file_matches(
+        tmp_path,
+        card.name,
+        expected,
+        None,
+    )
 
 
 def _config(tmp_path: Path) -> AppConfig:
@@ -44,6 +65,11 @@ def _config(tmp_path: Path) -> AppConfig:
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _text_sha256(path: Path) -> str:
+    canonical = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _insert_complete_board(config: AppConfig) -> None:
@@ -70,7 +96,7 @@ def _insert_complete_board(config: AppConfig) -> None:
                 "json_path": str(report_json.relative_to(config.project_root)),
                 "json_sha256": _sha256(report_json),
                 "markdown_path": str(report_markdown.relative_to(config.project_root)),
-                "markdown_sha256": _sha256(report_markdown),
+                "markdown_sha256": _text_sha256(report_markdown),
             },
             "registry": {
                 "path": str(registry.relative_to(config.project_root)),
@@ -205,7 +231,7 @@ def _insert_complete_board(config: AppConfig) -> None:
                 _sha256(artifact),
                 artifact.stat().st_size,
                 str(card.relative_to(config.project_root)),
-                _sha256(card),
+                _text_sha256(card),
             ],
         )
         prediction_sql = """

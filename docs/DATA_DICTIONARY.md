@@ -150,7 +150,27 @@ DuckDB and the registered attempt-scoped hashes are authoritative. Generated eva
 
 ## `adp_snapshots`
 
-One row per player within a timestamped source snapshot and league configuration. `raw_source_row_id` makes normalization auditable.
+One source observation per `(snapshot_id, raw_source_row_id)`. The row preserves source, capture time, season, scoring format, team count, display context, average/median/rank/min/max picks, sample size, source movement, source standard deviation, and the source movement horizon. `player_id` is nullable; `mapping_confidence` records whether canonical identity evidence exists. Unresolved rows remain source-keyed and are never joined by display name.
+
+## `adp_snapshot_metadata`
+
+One row per immutable production snapshot. The stable `snapshot_id` binds source, capture time, season, scoring format, team count, position scope, and raw SHA-256 evidence. `raw_relative_path` remains project-relative, `source_dataset_ids` records every manifest collapsed into the snapshot, `row_count` reconciles canonical observations, and `loaded_at` records warehouse normalization time. Repeating the same raw capture preserves this row and its observation count.
+
+## `adp_movement_features`
+
+One cutoff-safe feature row per source observation. `entity_key` uses a canonical player ID only when mapping evidence exists and otherwise retains the stable source identity. Fields include current and prior ADP, prior snapshot/time, elapsed days, 1/3/7/14-day change, velocity, acceleration, 14-day rolling volatility, cross-source spread, and source/identity observation counts. `feature_version` and `data_fingerprint` bind the calculation contract. A feature row uses no observation after its own `captured_at` cutoff.
+
+## `adp_movement_forecasts`
+
+Three one-day baseline rows per source observation: `persistence`, `linear_trend`, and `exponentially_weighted_trend`. `predicted_average_pick` and `predicted_change` are nullable when the method lacks enough history; `status`, `reason`, and `history_count` make that boundary explicit. Persistence requires one observation. The two trend methods require at least three dated observations for the same source player. The validated one-snapshot build therefore contains 738 rows: 246 ready persistence forecasts and zero ready linear or exponentially weighted forecasts.
+
+## `adp_availability_parameters`
+
+One distribution parameter row per source observation. `average_pick` is the location and `scale` is selected from source standard deviation, then min/max-derived spread, then a versioned configured fallback. `evidence_method`, `fallback_group`, source sample/range fields, and `mapping_confidence` keep the estimate explainable. The app conditions the pick distribution on the player still being available at the current pick. The validated build has 246 rows, all using source standard deviation and none using configured fallback.
+
+## `adp_phase5_builds`
+
+One deterministic logical build record per `build_fingerprint`. It binds the snapshot-data fingerprint and availability-configuration fingerprint to snapshot, observation, feature, forecast, parameter, and ready-method counts. `calibration_status`, `supervised_status`, and `report_payload` preserve honest capability boundaries. The validated build fingerprint is `3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b`; its snapshot fingerprint is `44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2`.
 
 ## `league_rules`
 

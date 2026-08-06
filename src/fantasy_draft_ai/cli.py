@@ -12,6 +12,7 @@ import typer
 import yaml
 
 from fantasy_draft_ai.config import load_config
+from fantasy_draft_ai.data.adp_loader import load_adp_to_warehouse
 from fantasy_draft_ai.data.audit import audit_project_data
 from fantasy_draft_ai.data.identity_review import (
     apply_identity_overrides,
@@ -215,6 +216,36 @@ def import_espn_adp_command(path: Path) -> None:
     typer.echo(f"Manifest: {result.manifest_path}")
 
 
+@data_app.command("load-adp")
+def load_adp_command(
+    manifest: Annotated[
+        Path | None,
+        typer.Option(
+            "--manifest",
+            help="One FFC/ESPN manifest. Defaults to every archived ADP manifest.",
+        ),
+    ] = None,
+    include_synthetic: Annotated[
+        bool,
+        typer.Option(
+            "--include-synthetic",
+            help="Permit clearly labeled fixture captures; disabled for production builds.",
+        ),
+    ] = False,
+) -> None:
+    """Verify and idempotently normalize immutable ADP captures into DuckDB."""
+
+    manifest_paths = None if manifest is None else [manifest]
+    result = load_adp_to_warehouse(
+        load_config(),
+        manifest_paths=manifest_paths,
+        include_synthetic=include_synthetic,
+    )
+    typer.echo(result.render())
+    if not result.committed or result.quality.has_fatal_errors:
+        raise typer.Exit(code=2)
+
+
 @data_app.command("audit")
 def audit_command() -> None:
     """Verify raw hashes and report canonical table counts."""
@@ -350,6 +381,34 @@ def train_player_models_command(
         report_markdown_path=output,
         report_json_path=output.with_suffix(".json"),
         force=force,
+    )
+    typer.echo(result.render())
+    if not result.committed and not result.reused:
+        raise typer.Exit(code=2)
+
+
+@models_app.command("build-adp-baselines")
+def build_adp_baselines_command(
+    availability_config: Annotated[
+        Path,
+        typer.Option(
+            "--availability-config",
+            help="Versioned fallbacks used only when source-reported spread is absent.",
+        ),
+    ] = Path("configs/adp_availability.yaml"),
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="Markdown evaluation report path."),
+    ] = Path("docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.md"),
+) -> None:
+    """Build cutoff-safe ADP movement and empirical availability baselines."""
+
+    from fantasy_draft_ai.models.adp.build import build_adp_market_baselines
+
+    result = build_adp_market_baselines(
+        load_config(),
+        availability_config_path=availability_config,
+        output_path=output,
     )
     typer.echo(result.render())
     if not result.committed and not result.reused:
