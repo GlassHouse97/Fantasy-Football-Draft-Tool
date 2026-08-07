@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import tempfile
+import zipfile
 from pathlib import Path
 
 import streamlit as st
@@ -257,15 +259,29 @@ def _render_league_imports(context: AppContext, snapshot: DataCenterSnapshot) ->
         disabled=True,
         help="Sleeper import is explicitly unavailable; no league data is simulated.",
     )
+    template_root = context.config.project_root / "data" / "templates" / "league_history_v1"
+    if template_root.is_dir():
+        st.download_button(
+            "Download league-history-v1 template",
+            data=_template_bundle_bytes(template_root),
+            file_name="league-history-v1-template.zip",
+            mime="application/zip",
+            width="stretch",
+        )
     history_package = st.file_uploader(
-        "Manual league-history package",
-        type=("csv", "json", "zip"),
+        "Manual league-history-v1 ZIP",
+        type=("zip",),
         help=(
-            "Archive-only intake. Files are hashed and preserved locally, but are not unpacked, "
-            "normalized, or used for modeling in Phase 7. Remove personal identifiers first."
+            "The original ZIP is archived first, then inspected in memory, validated, and "
+            "loaded transactionally only if every fatal check passes. Remove personal "
+            "identifiers before selecting it."
         ),
     )
-    if st.button("Archive league-history package", disabled=history_package is None):
+    if st.button(
+        "Archive, validate, and import history",
+        type="primary",
+        disabled=history_package is None,
+    ):
         if history_package is None:
             return
         suffix = Path(history_package.name).suffix.casefold()
@@ -279,8 +295,9 @@ def _render_league_imports(context: AppContext, snapshot: DataCenterSnapshot) ->
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
     st.warning(
-        "Before archiving personal history, replace league and team names with pseudonymous IDs. "
-        "Nothing uploaded here leaves this computer."
+        "Before importing personal history, replace league and team names with pseudonymous "
+        "IDs. The app does not transmit this upload, but this project is inside OneDrive and "
+        "Windows, OneDrive, or backup software may synchronize the archived local file."
     )
     sleeper = snapshot.action("sleeper_import")
     if sleeper is not None:
@@ -288,6 +305,17 @@ def _render_league_imports(context: AppContext, snapshot: DataCenterSnapshot) ->
     history = snapshot.action("league_history_import")
     if history is not None:
         st.info(f"**{history.label}:** {history.message}")
+
+
+def _template_bundle_bytes(template_root: Path) -> bytes:
+    """Create a download-only ZIP without modifying the tracked template files."""
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as package:
+        for path in sorted(template_root.iterdir(), key=lambda item: item.name):
+            if path.is_file() and (path.name == "package.json" or path.suffix == ".csv"):
+                package.writestr(path.name, path.read_bytes())
+    return output.getvalue()
 
 
 def _render_action_catalog(snapshot: DataCenterSnapshot) -> None:

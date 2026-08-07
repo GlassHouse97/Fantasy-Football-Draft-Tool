@@ -7,6 +7,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+import duckdb
+
 from fantasy_draft_ai.config import AppConfig
 from fantasy_draft_ai.data.manifests import SourceManifest, sha256_file
 from fantasy_draft_ai.data.warehouse import Warehouse
@@ -294,6 +296,7 @@ def audit_project_data(config: AppConfig) -> AuditResult:
                 ).fetchone()
                 if duplicate is None or int(duplicate[0]):
                     failures.append(f"Players contain duplicate non-null {column} values.")
+            failures.extend(_league_history_integrity_issues(connection))
     from fantasy_draft_ai.models.adp.build import adp_market_integrity_issues
     from fantasy_draft_ai.models.player_projection.repository import (
         projection_integrity_issues,
@@ -305,6 +308,253 @@ def audit_project_data(config: AppConfig) -> AuditResult:
 
     failures.extend(DraftRepository(config.resolve(config.paths.warehouse)).integrity_issues())
     return AuditResult(len(manifest_paths), verified, tuple(failures), counts)
+
+
+def _league_history_integrity_issues(
+    connection: duckdb.DuckDBPyConnection,
+) -> tuple[str, ...]:
+    """Reconcile Phase 8 provenance without requiring history to exist."""
+
+    issues: list[str] = []
+    checks = (
+        (
+            "League-history metadata references a missing import package.",
+            """
+            SELECT count(*)
+            FROM league_history_leagues AS league
+            LEFT JOIN league_history_imports AS package USING (package_fingerprint)
+            WHERE package.package_fingerprint IS NULL
+            """,
+        ),
+        (
+            "League-history metadata does not match its canonical rules row.",
+            """
+            SELECT count(*)
+            FROM league_history_leagues AS history
+            LEFT JOIN league_rules AS rules USING (league_season_id)
+            WHERE rules.league_season_id IS NULL
+               OR rules.user_draft_slot IS NOT NULL
+               OR rules.season <> history.season
+               OR rules.team_count <> history.team_count
+               OR rules.ruleset_fingerprint <> history.ruleset_fingerprint
+            """,
+        ),
+        (
+            "Historical draft picks contain orphan canonical player IDs.",
+            """
+            SELECT count(*)
+            FROM draft_picks AS pick
+            LEFT JOIN players AS player USING (player_id)
+            WHERE pick.player_id IS NOT NULL AND player.player_id IS NULL
+            """,
+        ),
+        (
+            "Imported draft-pick rows are not linked to league-history metadata.",
+            """
+            SELECT count(*)
+            FROM draft_picks AS pick
+            LEFT JOIN league_history_leagues AS history USING (league_season_id)
+            WHERE pick.source_dataset_id IS NOT NULL
+              AND history.league_season_id IS NULL
+            """,
+        ),
+        (
+            "Imported team-outcome rows are not linked to league-history metadata.",
+            """
+            SELECT count(*)
+            FROM team_outcomes AS outcome
+            LEFT JOIN league_history_leagues AS history USING (league_season_id)
+            WHERE outcome.source_dataset_id IS NOT NULL
+              AND history.league_season_id IS NULL
+            """,
+        ),
+        (
+            "League-history canonical rows do not match their manifest dataset lineage.",
+            """
+            SELECT count(*) FROM (
+                SELECT rules.source_dataset_id, package.manifest_dataset_id
+                FROM league_history_leagues AS history
+                JOIN league_history_imports AS package USING (package_fingerprint)
+                JOIN league_rules AS rules USING (league_season_id)
+                UNION ALL
+                SELECT pick.source_dataset_id, package.manifest_dataset_id
+                FROM league_history_leagues AS history
+                JOIN league_history_imports AS package USING (package_fingerprint)
+                JOIN draft_picks AS pick USING (league_season_id)
+                UNION ALL
+                SELECT outcome.source_dataset_id, package.manifest_dataset_id
+                FROM league_history_leagues AS history
+                JOIN league_history_imports AS package USING (package_fingerprint)
+                JOIN team_outcomes AS outcome USING (league_season_id)
+            ) AS lineage
+            WHERE source_dataset_id IS DISTINCT FROM manifest_dataset_id
+            """,
+        ),
+        (
+            "Roster-construction features contain invalid league-history lineage.",
+            """
+            SELECT count(*)
+            FROM roster_construction_features AS feature
+            LEFT JOIN league_history_leagues AS history USING (league_season_id)
+            WHERE history.league_season_id IS NULL
+               OR feature.package_fingerprint <> history.package_fingerprint
+               OR feature.ruleset_fingerprint <> history.ruleset_fingerprint
+               OR NOT EXISTS (
+                   SELECT 1 FROM draft_picks AS pick
+                   WHERE pick.league_season_id = feature.league_season_id
+                     AND pick.team_id = feature.team_id
+               )
+            """,
+        ),
+        (
+            "Draft-only team metrics contain invalid league-history lineage.",
+            """
+            SELECT count(*)
+            FROM draft_only_team_metrics AS metric
+            LEFT JOIN league_history_leagues AS history USING (league_season_id)
+            WHERE history.league_season_id IS NULL
+               OR metric.package_fingerprint <> history.package_fingerprint
+               OR NOT EXISTS (
+                   SELECT 1 FROM draft_picks AS pick
+                   WHERE pick.league_season_id = metric.league_season_id
+                     AND pick.team_id = metric.team_id
+               )
+            """,
+        ),
+    )
+    for message, query in checks:
+        if _audit_count(connection, query):
+            issues.append(message)
+
+    malformed_fingerprints = _audit_count(
+        connection,
+        """
+        SELECT count(*)
+        FROM league_history_imports
+        WHERE NOT regexp_matches(package_fingerprint, '^[0-9a-f]{64}$')
+           OR NOT regexp_matches(raw_sha256, '^[0-9a-f]{64}$')
+           OR NOT regexp_matches(normalized_fingerprint, '^[0-9a-f]{64}$')
+        """,
+    )
+    malformed_fingerprints += _audit_count(
+        connection,
+        """
+        SELECT count(*) FROM (
+            SELECT source_dataset_id, row_fingerprint, loaded_at FROM league_rules
+            UNION ALL
+            SELECT source_dataset_id, row_fingerprint, loaded_at FROM draft_picks
+            UNION ALL
+            SELECT source_dataset_id, row_fingerprint, loaded_at FROM team_outcomes
+        ) AS source_row
+        WHERE source_dataset_id IS NOT NULL
+          AND (
+              row_fingerprint IS NULL
+              OR NOT regexp_matches(row_fingerprint, '^[0-9a-f]{64}$')
+              OR loaded_at IS NULL
+          )
+        """,
+    )
+    if malformed_fingerprints:
+        issues.append("League-history provenance contains invalid SHA-256 or load metadata.")
+
+    package_count_mismatches = _audit_count(
+        connection,
+        """
+        SELECT count(*)
+        FROM league_history_imports AS package
+        WHERE package.league_count <> (
+                  SELECT count(*) FROM league_history_leagues AS history
+                  WHERE history.package_fingerprint = package.package_fingerprint
+              )
+           OR package.rules_rows <> (
+                  SELECT count(*)
+                  FROM league_history_leagues AS history
+                  JOIN league_rules AS rules USING (league_season_id)
+                  WHERE history.package_fingerprint = package.package_fingerprint
+              )
+           OR package.pick_rows <> (
+                  SELECT count(*)
+                  FROM league_history_leagues AS history
+                  JOIN draft_picks AS pick USING (league_season_id)
+                  WHERE history.package_fingerprint = package.package_fingerprint
+              )
+           OR package.outcome_rows <> (
+                  SELECT count(*)
+                  FROM league_history_leagues AS history
+                  JOIN team_outcomes AS outcome USING (league_season_id)
+                  WHERE history.package_fingerprint = package.package_fingerprint
+              )
+           OR package.unresolved_player_rows <> (
+                  SELECT count(*)
+                  FROM league_history_leagues AS history
+                  JOIN draft_picks AS pick USING (league_season_id)
+                  WHERE history.package_fingerprint = package.package_fingerprint
+                    AND pick.player_id IS NULL
+              )
+        """,
+    )
+    if package_count_mismatches:
+        issues.append("League-history import row accounting does not reconcile.")
+
+    league_count_mismatches = _audit_count(
+        connection,
+        """
+        SELECT count(*)
+        FROM league_history_leagues AS history
+        JOIN league_rules AS rules USING (league_season_id)
+        WHERE history.expected_pick_rows <> history.team_count * rules.rounds
+           OR history.actual_pick_rows <> (
+                  SELECT count(*) FROM draft_picks AS pick
+                  WHERE pick.league_season_id = history.league_season_id
+              )
+           OR history.outcome_rows <> (
+                  SELECT count(*) FROM team_outcomes AS outcome
+                  WHERE outcome.league_season_id = history.league_season_id
+              )
+           OR history.resolved_pick_rows <> (
+                  SELECT count(*) FROM draft_picks AS pick
+                  WHERE pick.league_season_id = history.league_season_id
+                    AND pick.player_id IS NOT NULL
+              )
+           OR (history.draft_complete AND history.actual_pick_rows <> history.expected_pick_rows)
+           OR (history.outcomes_complete AND history.outcome_rows <> history.team_count)
+           OR (
+               history.analysis_ready
+               AND (
+                   NOT history.draft_complete
+                   OR NOT history.outcomes_complete
+                   OR history.resolved_pick_rows <> history.actual_pick_rows
+               )
+           )
+        """,
+    )
+    if league_count_mismatches:
+        issues.append("League-history league row accounting or readiness is inconsistent.")
+
+    invalid_metric_values = _audit_count(
+        connection,
+        """
+        SELECT count(*)
+        FROM draft_only_team_metrics
+        WHERE weeks_scored < 0
+           OR drafted_starter_games < 0
+           OR starter_slot_weeks < 0
+           OR unfilled_starter_slot_weeks < 0
+           OR unfilled_starter_slot_weeks > starter_slot_weeks
+           OR mapping_coverage < 0 OR mapping_coverage > 1
+           OR (points_percentile IS NOT NULL AND (points_percentile < 0 OR points_percentile > 1))
+        """,
+    )
+    if invalid_metric_values:
+        issues.append("Draft-only team metrics contain invalid counts or proportions.")
+    return tuple(issues)
+
+
+def _audit_count(connection: duckdb.DuckDBPyConnection, query: str) -> int:
+    row = connection.execute(query).fetchone()
+    if row is None:
+        raise RuntimeError("DuckDB did not return an integrity count.")
+    return int(row[0])
 
 
 def _expected_build_fingerprint(

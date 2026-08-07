@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +24,7 @@ from fantasy_draft_ai.services.data_center import (
     run_safe_data_action,
     validate_data_action_request,
 )
+from fantasy_draft_ai.ui.pages.data_center import _template_bundle_bytes
 
 
 def _config(tmp_path: Path) -> AppConfig:
@@ -263,7 +266,7 @@ def test_initialize_warehouse_action_is_idempotent(tmp_path: Path) -> None:
     assert config.resolve(config.paths.warehouse).is_file()
 
 
-def test_league_history_action_archives_without_parsing(tmp_path: Path) -> None:
+def test_invalid_league_history_zip_is_archived_but_not_normalized(tmp_path: Path) -> None:
     config = _config(tmp_path)
     source = tmp_path / "private-history.zip"
     content = b"not unpacked and not modeled"
@@ -276,11 +279,28 @@ def test_league_history_action_archives_without_parsing(tmp_path: Path) -> None:
     )
     result = run_safe_data_action(config, request)
 
-    assert result.succeeded
+    assert not result.succeeded
+    assert "validation_failed" in result.message
     assert Path(result.artifact_paths[0]).read_bytes() == content
     assert source.read_bytes() == content
     snapshot = load_data_center(config)
-    assert not snapshot.quality.passed
-    assert snapshot.quality.failures == ("Canonical warehouse is not initialized.",)
+    assert snapshot.quality.passed
+    assert snapshot.warehouse.table_count("league_history_imports") == 1
+    assert snapshot.warehouse.table_count("league_rules") == 0
+    assert snapshot.warehouse.table_count("draft_picks") == 0
+    assert snapshot.warehouse.table_count("team_outcomes") == 0
     history = next(item for item in snapshot.sources if item.source == "league_history")
     assert history.fully_verified
+
+
+def test_history_template_download_contains_only_importable_root_files(tmp_path: Path) -> None:
+    template = tmp_path / "template"
+    template.mkdir()
+    (template / "package.json").write_text("{}", encoding="utf-8")
+    (template / "league_rules.csv").write_text("header\n", encoding="utf-8")
+    (template / "README.md").write_text("instructions", encoding="utf-8")
+
+    payload = _template_bundle_bytes(template)
+
+    with zipfile.ZipFile(io.BytesIO(payload)) as package:
+        assert package.namelist() == ["league_rules.csv", "package.json"]

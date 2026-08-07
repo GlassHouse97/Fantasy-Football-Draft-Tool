@@ -5,11 +5,16 @@ __pycache__/
 .pytest_cache/
 .pytest_tmp/
 .pytest_tmp*/
+.pytest_identity_*/
+.pytest_pub_audit/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
 .streamlit/secrets.toml
+.streamlit-qa/
+.agents/
+.claude/
 
 # Local data and generated artifacts. Keep templates, samples, and .gitkeep files.
 data/raw/**/*

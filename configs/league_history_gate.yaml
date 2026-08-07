@@ -1,0 +1,14 @@
+schema_version: league-history-gate-v1
+minimum_league_seasons: 100
+minimum_team_seasons: 1000
+minimum_distinct_seasons: 5
+minimum_validation_league_seasons: 20
+minimum_test_league_seasons: 20
+minimum_positive_examples: 100
+minimum_negative_examples: 100
+minimum_complete_draft_rate: 0.95
+minimum_complete_outcome_rate: 0.95
+minimum_mapped_pick_rate: 0.95
+gradient_boosting_minimum_league_seasons: 500
+gradient_boosting_minimum_team_seasons: 5000
+gradient_boosting_minimum_class_examples: 500

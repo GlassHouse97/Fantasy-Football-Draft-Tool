@@ -41,6 +41,10 @@ def test_warehouse_initialization_is_idempotent(tmp_path: Path) -> None:
         "draft_events": 0,
         "draft_recommendation_runs": 0,
         "team_outcomes": 0,
+        "league_history_imports": 0,
+        "league_history_leagues": 0,
+        "roster_construction_features": 0,
+        "draft_only_team_metrics": 0,
     }
     with warehouse.connect(read_only=True) as connection:
         columns = {
@@ -109,6 +113,98 @@ def test_warehouse_initialization_is_idempotent(tmp_path: Path) -> None:
         "resolution",
         "is_current",
     } <= review_columns
+
+    expected_history_columns = {
+        "league_rules": {
+            "draft_date",
+            "source_dataset_id",
+            "row_fingerprint",
+            "loaded_at",
+        },
+        "draft_picks": {
+            "position",
+            "source_platform",
+            "source_player_id",
+            "mapping_confidence",
+            "source_dataset_id",
+            "row_fingerprint",
+            "loaded_at",
+        },
+        "team_outcomes": {"source_dataset_id", "row_fingerprint", "loaded_at"},
+        "league_history_imports": {
+            "package_fingerprint",
+            "schema_version",
+            "manifest_dataset_id",
+            "raw_path",
+            "raw_sha256",
+            "normalized_fingerprint",
+            "status",
+            "league_count",
+            "rules_rows",
+            "pick_rows",
+            "outcome_rows",
+            "unresolved_player_rows",
+            "quality_report",
+            "imported_at",
+        },
+        "league_history_leagues": {
+            "league_season_id",
+            "package_fingerprint",
+            "season",
+            "team_count",
+            "ruleset_fingerprint",
+            "expected_pick_rows",
+            "actual_pick_rows",
+            "outcome_rows",
+            "resolved_pick_rows",
+            "draft_complete",
+            "outcomes_complete",
+            "analysis_ready",
+        },
+        "roster_construction_features": {
+            "league_season_id",
+            "team_id",
+            "feature_version",
+            "package_fingerprint",
+            "ruleset_fingerprint",
+            "feature_payload",
+            "built_at",
+        },
+        "draft_only_team_metrics": {
+            "league_season_id",
+            "team_id",
+            "metric_version",
+            "package_fingerprint",
+            "weekly_data_fingerprint",
+            "scoring_fingerprint",
+            "weeks_scored",
+            "optimal_lineup_points",
+            "best_ball_points",
+            "drafted_starter_games",
+            "starter_slot_weeks",
+            "unfilled_starter_slot_weeks",
+            "points_percentile",
+            "mapping_coverage",
+            "status",
+            "metrics_payload",
+            "built_at",
+        },
+    }
+    with warehouse.connect(read_only=True) as connection:
+        for table, expected_columns in expected_history_columns.items():
+            actual_columns = {
+                row[1] for row in connection.execute(f"PRAGMA table_info('{table}')").fetchall()
+            }
+            assert expected_columns <= actual_columns
+        metric_nullability = {
+            str(row[1]): bool(row[3])
+            for row in connection.execute(
+                "PRAGMA table_info('draft_only_team_metrics')"
+            ).fetchall()
+        }
+    assert not metric_nullability["drafted_starter_games"]
+    assert not metric_nullability["starter_slot_weeks"]
+    assert not metric_nullability["unfilled_starter_slot_weeks"]
 
     expected_projection_columns = {
         "player_projection_runs": {

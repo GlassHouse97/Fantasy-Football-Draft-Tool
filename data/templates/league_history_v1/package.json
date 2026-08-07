@@ -1,0 +1,45 @@
+{
+  "schema_version": "league-history-v1",
+  "package_id": "replace-with-a-stable-pseudonymous-package-id",
+  "created_at": "2026-08-06T00:00:00Z",
+  "source_platform": "espn_manual",
+  "contains_personal_identifiers": false,
+  "files": [
+    {
+      "kind": "league_rules",
+      "path": "league_rules.csv",
+      "required": true,
+      "included": true
+    },
+    {
+      "kind": "draft_picks",
+      "path": "draft_picks.csv",
+      "required": true,
+      "included": true
+    },
+    {
+      "kind": "team_outcomes",
+      "path": "team_outcomes.csv",
+      "required": true,
+      "included": true
+    },
+    {
+      "kind": "weekly_rosters",
+      "path": "weekly_rosters.csv",
+      "required": false,
+      "included": false
+    },
+    {
+      "kind": "matchups",
+      "path": "matchups.csv",
+      "required": false,
+      "included": false
+    },
+    {
+      "kind": "transactions",
+      "path": "transactions.csv",
+      "required": false,
+      "included": false
+    }
+  ]
+}

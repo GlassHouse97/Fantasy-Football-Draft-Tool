@@ -17,7 +17,7 @@ from fantasy_draft_ai.ui.context import AppContext
 
 
 def render_page_header(title: str, eyebrow: str, description: str) -> None:
-    """Render the consistent Phase 7 page heading."""
+    """Render the consistent local-app page heading."""
 
     st.caption(eyebrow.upper())
     st.title(title)

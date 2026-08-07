@@ -18,6 +18,7 @@ from fantasy_draft_ai.data.identity_review import (
     apply_identity_overrides,
     refresh_identity_review_queue,
 )
+from fantasy_draft_ai.data.league_history_loader import import_league_history_package
 from fantasy_draft_ai.data.nflverse_loader import load_nflverse_to_warehouse
 from fantasy_draft_ai.data.nflverse_participation import (
     load_nflverse_participation_to_warehouse,
@@ -32,6 +33,7 @@ from fantasy_draft_ai.data.warehouse import Warehouse
 from fantasy_draft_ai.draft.repository import DraftRepository
 from fantasy_draft_ai.draft.state import DraftStateError
 from fantasy_draft_ai.features.player_seasons import build_player_season_features
+from fantasy_draft_ai.features.roster_construction import build_roster_history
 from fantasy_draft_ai.logging import configure_logging
 from fantasy_draft_ai.models.baselines.evaluate import evaluate_baselines
 from fantasy_draft_ai.recommendations.config import load_draft_engine_config
@@ -272,6 +274,16 @@ def load_adp_command(
         raise typer.Exit(code=2)
 
 
+@data_app.command("import-league-history")
+def import_league_history_command(path: Path) -> None:
+    """Archive, validate, and transactionally load a league-history-v1 ZIP."""
+
+    result = import_league_history_package(load_config(), path)
+    typer.echo(result.render())
+    if not result.committed or result.quality.has_fatal_errors:
+        raise typer.Exit(code=2)
+
+
 @data_app.command("audit")
 def audit_command() -> None:
     """Verify raw hashes and report canonical table counts."""
@@ -304,6 +316,16 @@ def score_example_command(path: Path) -> None:
     rules = _load_rules(path)
     example = PlayerStatLine(position="WR", receiving_yards=100, receptions=7, receiving_tds=1)
     typer.echo(f"Example WR points: {score_player(example, rules.scoring):.2f}")
+
+
+@features_app.command("build-roster-history")
+def build_roster_history_command() -> None:
+    """Build idempotent roster-construction and drafted-only historical reports."""
+
+    result = build_roster_history(load_config())
+    typer.echo(result.render())
+    if not result.committed:
+        raise typer.Exit(code=2)
 
 
 @features_app.command("build-player-seasons")

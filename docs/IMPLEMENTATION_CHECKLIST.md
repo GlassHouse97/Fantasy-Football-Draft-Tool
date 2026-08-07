@@ -21,7 +21,7 @@
 - [x] Implement validated manual ESPN ADP archiving.
 - [x] Add small labeled fixtures and deterministic tests.
 - [ ] Add optional Sleeper league import.
-- [ ] Add a validated league-history package parser and canonical loader; Phase 7 provides quarantine archiving only.
+- [x] Add a validated `league-history-v1` package parser, rejected-quality record, and idempotent canonical loader in Phase 8.
 
 ## Phase 2 — scoring, rules, and identity (complete)
 
@@ -154,8 +154,34 @@
 - [x] Pass the CLI data audit across eight manifests and 12 verified immutable raw files.
 - [x] Complete real browser navigation and successfully run the live Data Center audit action.
 
+## Phase 8 — league-history modeling framework (implementation complete)
+
+- [x] Publish a header-only, versioned `league-history-v1` template with three required and three optional evidence files.
+- [x] Document pseudonymization, OneDrive/backup caveats, complete-season collection, stable IDs, and the difference between descriptive analysis and outcome modeling.
+- [x] Archive every upload immutably before inspection and verify the archived SHA-256 manifest.
+- [x] Validate ZIP members in memory and reject traversal, absolute/nested paths, links, encryption, collisions, undeclared files, excessive entries, expanded size, and compression ratio.
+- [x] Validate exact headers, required values, types, JSON settings, draft structure, team/outcome consistency, package privacy assertion, and schema version.
+- [x] Normalize league rules, complete draft picks, and all-team outcomes transactionally with row/package fingerprints and idempotent repeat behavior.
+- [x] Reject conflicting canonical source facts without overwriting the earlier authority.
+- [x] Preserve unresolved source-player evidence and map only through exact public IDs or reviewed registry decisions; never join on display name.
+- [x] Extend the identity-review queue for unresolved historical picks and update only mapping fields when a reviewed decision is applied.
+- [x] Add empty-safe warehouse audits for package/manifest lineage, source hashes, canonical reconciliation, orphan IDs, readiness, and metric bounds.
+- [x] Build versioned roster-construction descriptions for positional picks, draft capital, first-position rounds, round cutoffs, starter coverage, bench depth, and ruleset demand.
+- [x] Keep historical ADP value, VORP, volatility, and bye features unavailable when time-valid evidence is absent.
+- [x] Build drafted-only optimal-lineup/best-ball points, starter games, within-league percentile, and unfilled-slot burden only when every player and weekly input validates.
+- [x] Keep unavailable drafted-only numeric values null instead of fabricating zero results.
+- [x] Add the read-only `/league-history` workspace with package quality downloads, coverage, pseudonymous team results, roster features, and exact gate criteria.
+- [x] Add CLI and Data Center workflows for package import plus an idempotent descriptive feature build.
+- [x] Configure conservative minimum evidence for chronological outcome evaluation and a higher nonlinear-model floor.
+- [x] Expose no playoff/championship training control and produce no outcome probability.
+- [x] Add a copy-paste human-testing guide and manual historical-data walkthrough.
+- [x] Record final repository-wide local gates, data audit, AppTest/browser QA, and Phase 8 evaluation evidence.
+- [x] Publish Phase 8 commit `d593fe4` on `codex/phase-8-league-history` and open draft PR #8.
+- [ ] Merge PR #8 only with truthful hosted-CI evidence or an explicit outage decision.
+
 ## Publication and operator follow-up
 
 - [ ] Re-run and verify the Phase 6 `main` workflow and the missing Phase 7 PR workflow after GitHub Actions recovers. Neither is green; an hourly retry reminder tracks both.
 - [ ] Operator prerequisite: review canonical FFC identities, rebuild Phase 5, and create a new frozen recommendation-ready session.
-- [ ] Phase 8: import real pseudonymized league histories, build descriptive history analysis, and permit outcome modeling only after its separate data-sufficiency gate passes.
+- [ ] Operator option: import real pseudonymized league histories, review unresolved identities, and build descriptive history reports.
+- [ ] Keep league-outcome modeling locked until real evidence passes the Phase 8 sufficiency gate and an independently reviewed future modeling phase is authorized.

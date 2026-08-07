@@ -1,1 +1,1 @@
-"""Page renderers for the Phase 7 Streamlit application."""
+"""Page renderers for the local Streamlit application."""

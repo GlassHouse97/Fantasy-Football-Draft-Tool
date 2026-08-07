@@ -8,7 +8,7 @@ import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -213,6 +213,7 @@ def refresh_identity_review_queue(
     with warehouse.connect(read_only=True) as connection:
         players = _load_players(connection)
         mappings = _load_source_mappings(connection)
+        league_history_observations = _league_history_observations(connection)
     if not players:
         issues.append(
             QualityIssue(
@@ -224,6 +225,7 @@ def refresh_identity_review_queue(
 
     observations: list[SourceObservation] = []
     if not any(issue.severity == Severity.FATAL for issue in issues):
+        observations.extend(league_history_observations)
         for capture in captures:
             try:
                 if capture.manifest.source == "nflverse":
@@ -470,6 +472,95 @@ def _load_source_mappings(
         "SELECT source, source_player_id, player_id FROM player_source_mappings"
     ).fetchall()
     return {(str(row[0]), str(row[1])): str(row[2]) for row in rows}
+
+
+def _league_history_observations(
+    connection: duckdb.DuckDBPyConnection,
+) -> list[SourceObservation]:
+    """Return one auditable observation per unresolved historical source identity."""
+
+    table_exists = connection.execute(
+        "SELECT count(*) FROM information_schema.tables "
+        "WHERE table_schema = 'main' AND table_name = 'draft_picks'"
+    ).fetchone()
+    if table_exists is None or not int(table_exists[0]):
+        return []
+    rows = connection.execute(
+        """
+        SELECT
+            pick.source_platform,
+            pick.source_player_id,
+            pick.player_name,
+            pick.position,
+            pick.league_season_id,
+            pick.overall_pick,
+            pick.source_dataset_id,
+            coalesce(pick.loaded_at, package.imported_at) AS observed_at
+        FROM draft_picks AS pick
+        LEFT JOIN league_history_leagues AS history
+            USING (league_season_id)
+        LEFT JOIN league_history_imports AS package
+            USING (package_fingerprint)
+        WHERE pick.player_id IS NULL
+          AND nullif(trim(pick.source_platform), '') IS NOT NULL
+          AND nullif(trim(pick.source_player_id), '') IS NOT NULL
+        ORDER BY
+            lower(pick.source_platform),
+            pick.source_player_id,
+            observed_at DESC NULLS LAST,
+            pick.league_season_id,
+            pick.overall_pick
+        """
+    ).fetchall()
+    grouped: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
+    for row in rows:
+        source = str(row[0]).strip().lower()
+        source_player_id = str(row[1]).strip()
+        grouped.setdefault((source, source_player_id), []).append(row)
+
+    observations: list[SourceObservation] = []
+    fallback_time = datetime(1970, 1, 1, tzinfo=UTC)
+    for (source, source_player_id), source_rows in grouped.items():
+        names = sorted(
+            {value for row in source_rows if (value := _clean_optional(row[2])) is not None}
+        )
+        positions = sorted(
+            {value for row in source_rows if (value := _clean_optional(row[3])) is not None}
+        )
+        league_seasons = sorted({str(row[4]) for row in source_rows})
+        dataset_ids = sorted(
+            {value for row in source_rows if (value := _clean_optional(row[6])) is not None}
+        )
+        latest_name = next(
+            (value for row in source_rows if (value := _clean_optional(row[2])) is not None),
+            None,
+        )
+        latest_dataset_id = next(
+            (value for row in source_rows if (value := _clean_optional(row[6])) is not None),
+            None,
+        )
+        observed_times = [row[7] for row in source_rows if isinstance(row[7], datetime)]
+        observations.append(
+            SourceObservation(
+                issue_type="league_history_source_mapping",
+                source=source,
+                source_player_id=source_player_id,
+                display_name=latest_name or "<missing name>",
+                position=positions[0] if len(positions) == 1 else None,
+                nfl_team=None,
+                dataset_id=latest_dataset_id or "league-history:unknown",
+                observed_at=max(observed_times, default=fallback_time),
+                evidence={
+                    "origin": "canonical_draft_picks",
+                    "unresolved_pick_count": len(source_rows),
+                    "league_season_ids": league_seasons,
+                    "source_dataset_ids": dataset_ids,
+                    "observed_names": names,
+                    "observed_positions": positions,
+                },
+            )
+        )
+    return observations
 
 
 def _nflverse_conflicts(capture: _Capture) -> list[SourceObservation]:
@@ -726,6 +817,10 @@ def _merge_review_rows(
     with warehouse.connect() as connection:
         try:
             connection.execute("BEGIN TRANSACTION")
+            connection.execute(
+                "UPDATE identity_review_queue SET is_current = FALSE "
+                "WHERE issue_type = 'league_history_source_mapping'"
+            )
             for source in sorted(refreshed_sources):
                 connection.execute(
                     "UPDATE identity_review_queue SET is_current = FALSE WHERE source = ?",
@@ -1264,6 +1359,8 @@ def _commit_overrides(
                     )
                 applied += 1
 
+            _refresh_league_history_mapping_metadata(connection)
+
             orphan_count = connection.execute(
                 "SELECT count(*) FROM player_source_mappings m LEFT JOIN players p "
                 "ON m.player_id = p.player_id WHERE p.player_id IS NULL"
@@ -1281,6 +1378,156 @@ def _commit_overrides(
             connection.execute("ROLLBACK")
             raise
     return applied, matched
+
+
+def _refresh_league_history_mapping_metadata(
+    connection: duckdb.DuckDBPyConnection,
+) -> None:
+    """Reconcile derived history readiness after transactional identity changes."""
+
+    league_rows = connection.execute(
+        """
+        SELECT league_season_id, expected_pick_rows, team_count
+        FROM league_history_leagues
+        ORDER BY league_season_id
+        """
+    ).fetchall()
+    for league_season_id, expected_pick_rows, team_count in league_rows:
+        counts = connection.execute(
+            """
+            SELECT
+                count(*) AS actual_pick_rows,
+                count(*) FILTER (WHERE player_id IS NOT NULL) AS resolved_pick_rows
+            FROM draft_picks
+            WHERE league_season_id = ?
+            """,
+            [league_season_id],
+        ).fetchone()
+        outcome_count = connection.execute(
+            "SELECT count(*) FROM team_outcomes WHERE league_season_id = ?",
+            [league_season_id],
+        ).fetchone()
+        if counts is None or outcome_count is None:
+            raise RuntimeError("Could not reconcile league-history mapping readiness.")
+        actual = int(counts[0])
+        resolved = int(counts[1])
+        outcomes = int(outcome_count[0])
+        draft_complete = actual == int(expected_pick_rows)
+        outcomes_complete = outcomes == int(team_count)
+        analysis_ready = draft_complete and outcomes_complete and resolved == actual
+        connection.execute(
+            """
+            UPDATE league_history_leagues SET
+                actual_pick_rows = ?,
+                outcome_rows = ?,
+                resolved_pick_rows = ?,
+                draft_complete = ?,
+                outcomes_complete = ?,
+                analysis_ready = ?
+            WHERE league_season_id = ?
+            """,
+            [
+                actual,
+                outcomes,
+                resolved,
+                draft_complete,
+                outcomes_complete,
+                analysis_ready,
+                league_season_id,
+            ],
+        )
+
+    package_rows = connection.execute(
+        """
+        SELECT package_fingerprint, schema_version, quality_report
+        FROM league_history_imports
+        WHERE status = 'imported'
+        ORDER BY package_fingerprint
+        """
+    ).fetchall()
+    for package_fingerprint, schema_version, stored_report in package_rows:
+        summary = connection.execute(
+            """
+            SELECT
+                count(*) AS league_count,
+                count(*) FILTER (WHERE draft_complete) AS draft_complete_leagues,
+                count(*) FILTER (WHERE outcomes_complete) AS outcomes_complete_leagues,
+                count(*) FILTER (WHERE analysis_ready) AS analysis_ready_leagues
+            FROM league_history_leagues
+            WHERE package_fingerprint = ?
+            """,
+            [package_fingerprint],
+        ).fetchone()
+        unresolved_row = connection.execute(
+            """
+            SELECT count(*)
+            FROM league_history_leagues AS history
+            JOIN draft_picks AS pick USING (league_season_id)
+            WHERE history.package_fingerprint = ? AND pick.player_id IS NULL
+            """,
+            [package_fingerprint],
+        ).fetchone()
+        if summary is None or unresolved_row is None:
+            raise RuntimeError("Could not reconcile league-history package readiness.")
+        unresolved = int(unresolved_row[0])
+        payload = json.loads(str(stored_report))
+        quality = QualityReport.model_validate(payload["quality"])
+        issues = [
+            issue for issue in quality.issues if issue.code != "unresolved_player_mappings"
+        ]
+        if unresolved:
+            issues.append(
+                QualityIssue(
+                    code="unresolved_player_mappings",
+                    message=(
+                        "Draft picks without a canonical/source-ID or reviewed mapping were "
+                        "retained with player_id null; display names were not joined."
+                    ),
+                    count=unresolved,
+                )
+            )
+        current_quality = quality.model_copy(
+            update={"unresolved_players": unresolved, "issues": issues}
+        )
+        analysis_ready_leagues = int(summary[3])
+        reasons = [
+            "Championship modeling remains disabled until the separate data-sufficiency gate "
+            "passes."
+        ]
+        if not analysis_ready_leagues:
+            reasons.append(
+                "No league has a complete draft, complete outcomes, and 100% resolved draft "
+                "picks."
+            )
+        readiness = {
+            "schema_version": str(schema_version),
+            "archived": True,
+            "normalized": True,
+            "league_count": int(summary[0]),
+            "draft_complete_leagues": int(summary[1]),
+            "outcomes_complete_leagues": int(summary[2]),
+            "analysis_ready_leagues": analysis_ready_leagues,
+            "championship_model_status": "disabled",
+            "reasons": reasons,
+        }
+        quality_report = json.dumps(
+            {
+                "quality": current_quality.model_dump(mode="json"),
+                "readiness": readiness,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        connection.execute(
+            """
+            UPDATE league_history_imports SET
+                unresolved_player_rows = ?,
+                quality_report = ?
+            WHERE package_fingerprint = ?
+            """,
+            [unresolved, quality_report, package_fingerprint],
+        )
 
 
 def _apply_player_resolution(
@@ -1313,4 +1560,15 @@ def _apply_player_resolution(
         WHERE source = ? AND raw_source_row_id = ?
         """,
         [player_id, source, source_player_id],
+    )
+    connection.execute(
+        """
+        UPDATE draft_picks SET
+            player_id = ?,
+            mapping_confidence = 'reviewed'
+        WHERE lower(source_platform) = ?
+          AND source_player_id = ?
+          AND (player_id IS NULL OR player_id = ?)
+        """,
+        [player_id, source.lower(), source_player_id, player_id],
     )
