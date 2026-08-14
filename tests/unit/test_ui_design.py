@@ -49,7 +49,8 @@ def test_draft_night_theme_has_accessible_contrast_and_explicit_fonts() -> None:
         >= 2.5
     )
     assert "Inter" in theme["font"]
-    assert "Barlow Condensed" in theme["headingFont"]
+    assert "Outfit" in theme["headingFont"]
+    assert "family=Outfit" in theme["headingFont"]
     assert theme["showWidgetBorder"] is True
 
 

@@ -28,7 +28,7 @@ python -m streamlit run app.py
 
 ## What the Draft Night interface should look like
 
-The current local interface uses Streamlit's native dark theme with Inter body text and Barlow Condensed headings. It should feel like one draft product rather than a set of equal-looking technical panels:
+The current local interface uses Streamlit's native dark theme with Inter body text and clean geometric Outfit headings. It should feel like one draft product rather than a set of equal-looking technical panels:
 
 - turn status is a compact card with overall pick, round, team on the clock, and undo;
 - the main recommendation is visually dominant, with smaller strong alternatives and a compact roster card beside it;
