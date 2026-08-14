@@ -2,13 +2,13 @@
 
 [![Quality gates](https://github.com/GlassHouse97/Fantasy-Football-Draft-Tool/actions/workflows/quality.yml/badge.svg)](https://github.com/GlassHouse97/Fantasy-Football-Draft-Tool/actions/workflows/quality.yml)
 
-A local-first NFL redraft assistant that turns historical football data, exact league rules, and current draft-market information into transparent recommendations. The goal is useful software **and** a practical course in sports modeling. No LLM decides who you should draft.
+A local-first NFL redraft assistant that turns historical football data, exact league rules, and optional verified draft-market information into transparent recommendations. The goal is useful software **and** a practical course in sports modeling. No LLM decides who you should draft.
 
 ## What works today
 
 The runnable local foundation includes:
 
-- a packaged Python CLI and eight-route local Streamlit application;
+- a packaged Python CLI and recommendation-first local Streamlit application;
 - immutable raw-file archives with SHA-256 manifests;
 - a DuckDB warehouse schema for the project’s canonical tables;
 - current `nflreadpy` and Fantasy Football Calculator adapters with offline reuse;
@@ -21,13 +21,14 @@ The runnable local foundation includes:
 - cutoff-safe player-season features, separately persisted future targets, and source provenance;
 - five transparent projection baselines evaluated on expanding 2020-2025 folds;
 - position-specific Ridge and histogram gradient-boosting models with validation-gated champions;
-- a validated 2026 projection board with P10/P50/P90 displays and player explanations;
+- a validated 2026 projection publication with P10/P50/P90 displays, player explanations, and explicit labels for unvalidated rookie fallbacks;
 - idempotent, hash-verified normalization of immutable FFC and manual ESPN ADP captures;
 - cutoff-safe ADP movement features with persistence, linear-trend, and exponentially weighted baselines;
 - a transparent next-pick availability distribution with source-reported spread evidence and labeled fallbacks;
 - an event-sourced snake-draft engine with immutable session pools, append-only picks, undo, replacement, and replay hashes;
 - exact ruleset-aware lineup assignment plus a seeded Monte Carlo and transparent recommendation baseline;
-- a runnable manual Streamlit draft room and deterministic draft CLI;
+- a quick-start redraft assistant with one-click picks, immediate projection-based advice, and a deterministic draft CLI;
+- league-adjusted player rankings based on value over replacement rather than raw cross-position points;
 - normalized, fingerprinted league setup persistence with YAML backup and restore;
 - an auditable Data Center and read-only Model Lab that preserve the data and model publication gates;
 - descriptive post-draft lineup, draft-capital, ADP-value, replacement-risk, and strategy reports;
@@ -36,7 +37,7 @@ The runnable local foundation includes:
 - reviewed historical player mappings, roster-construction features, drafted-only descriptions, and an explicit outcome-model evidence gate;
 - tests for data integrity, leakage, chronological evaluation, model selection, publication integrity, ADP idempotency, availability bounds, scoring, rules, and replacement value.
 
-Phases 0 through 8 are implemented locally. Phase 8 adds a dedicated League History workspace and the final modeling-framework boundary from the master specification. No real personal history is bundled or imported: production currently has 0 history packages, league-seasons, team outcomes, roster features, and drafted-only metrics. That is an honest empty state, not a demo dataset. The draft engine remains usable for manual picks, undo, replacement, rosters, replay verification, and descriptive post-draft reporting. Live recommendations are separately locked because all 203 draftable QB/RB/WR/TE ADP rows still lack reviewed canonical mappings; 43 PK/DEF rows remain outside this ruleset's coverage. No championship probability is produced.
+Phases 0 through 8 from the master specification are implemented. The current product milestone refocuses that foundation on the actual draft-day job: start a supported 2026 full-PPR snake draft, record each QB/RB/WR/TE selection, and see the best projected pick when your team is on the clock. Projection-first guidance works with the current 1,367-player board and adapts to league size, replacement value, positional drop-off, and roster fit. Of those rows, 233 live rookies use unvalidated point-only heuristic fallbacks; their `P10=P50=P90`, and their risk is not estimated. Quick Start offers two built-in no-K/DST roster presets and cannot record kicker or team-defense selections, so it is not yet a complete live tracker for leagues that draft those positions. The stricter ADP/Monte Carlo layer remains separately locked because all 203 compatible QB/RB/WR/TE ADP rows still lack reviewed canonical mappings; current ADP and next-pick timing are therefore unavailable rather than invented. No championship probability is produced.
 
 ## Local setup (Windows PowerShell)
 
@@ -184,9 +185,9 @@ fantasy-draft draft recommend --session-id SESSION_ID
 
 Use the current version printed by `draft show` for each mutation. Every command appends an idempotent event and checks optimistic concurrency. The session freezes all 1,367 canonical projection rows and their exact lineage, so a later upstream refresh cannot rewrite an in-progress draft.
 
-The versioned `phase6-baseline-v1` configuration uses 64 default simulation paths, evaluates six candidates, and requires 100% canonical market coverage. Controlled mapped fixtures prove seeded rest-of-draft simulation, distinct balanced/safe-floor/high-upside outputs, configurable component weights, ruleset-sensitive replacement value, and the absence of championship-probability claims. Those fixtures validate the engine; they do not make the current live data recommendation-ready.
+The versioned `phase6-baseline-v1` configuration uses 64 default simulation paths, evaluates six candidates, and requires 100% canonical market coverage. Controlled mapped fixtures prove seeded rest-of-draft simulation, distinct balanced/safe-floor/high-upside outputs, configurable component weights, ruleset-sensitive replacement value, and the absence of championship-probability claims. That enhanced engine remains distinct from the app's projection-first guidance.
 
-Current production status is `identity_mapping_required`: 0 of 203 draftable PPR/12-team QB/RB/WR/TE ADP rows map to canonical projection IDs. The 43 archived PK/DEF rows are outside the configured roster and projection scope, so they do not create an impossible coverage requirement. Names are never used as a fallback join. The manual room is runnable, but `draft recommend` exits unavailable until the operator reviews identities and rebuilds Phase 5:
+Current enhanced-simulation status is `identity_mapping_required`: 0 of 203 draftable PPR/12-team QB/RB/WR/TE ADP rows map to canonical projection IDs. The 43 archived PK/DEF rows are outside the configured roster and projection scope. Names are never used as a fallback join. The main Draft Assistant still recommends from projections and league rules; the CLI `draft recommend` command remains the stricter market-simulation action and stays unavailable until the operator reviews identities and rebuilds Phase 5:
 
 ```powershell
 fantasy-draft data review-identities
@@ -200,7 +201,7 @@ fantasy-draft status
 
 The verified Phase 6 implementation gates include Ruff, strict mypy across 69 source files, 210 passing pytest tests in 77.23 seconds, a Streamlit AppTest run with zero exceptions across all six tabs, a passing data audit covering eight manifests and 12 verified immutable raw files, and the passing one-command quality-gate wrapper.
 
-The Phase 6 GitHub Actions workflow is not recorded as green. GitHub's runner outage canceled the pull-request and `main` workflows before a runner was assigned, so an hourly reminder is active to retry and verify the `main` run when hosted runners recover. The local Phase 6 evidence above remains valid; it is not a substitute for a completed hosted workflow.
+After the GitHub Actions outage recovered, Phase 6 pull-request run `31118319345` completed on a hosted runner with every quality step green. On August 14, 2026, the affected Phase 6 `main` run `31119062454` was safely canceled and rerun; attempt 2 received real hosted job `94857281821` and completed green in 1 minute 49 seconds with Ruff, mypy, and pytest passing. Later green descendant `main` runs also include the Phase 6 code.
 
 ## Use the local application
 
@@ -214,24 +215,29 @@ Streamlit exposes one stable route for each workflow:
 
 | Route | Purpose |
 |---|---|
-| `/status` | Project readiness, current data/model facts, blockers, and next action |
+| `/` | Default quick start, best pick now, alternatives, one-click pick tracking, roster, and history |
+| `/rankings` | Searchable league-adjusted rankings with projections, uncertainty, tiers, and value over replacement; quick top-N views and an all-player view are available |
+| `/draft-report` | Descriptive lineup, positional capital, value, risk, strategy, and limitation report |
+| `/help` | Plain-language quick start, live-pick instructions, and recommendation glossary |
+| `/league-settings` | Advanced roster/scoring/playoff rules, draft slot, fingerprint, and YAML backup/restore |
+| `/technical-draft-room` | Advanced frozen-board, replay, and market-simulation diagnostics |
+| `/system-status` | Project readiness, data/model facts, blockers, and local reset controls |
 | `/data-center` | Immutable source archives, manifests, warehouse inventory, and quality audit |
-| `/league-history` | Package quality, coverage, pseudonymous team outcomes, roster construction, drafted-only results, and the outcome-model gate |
-| `/model-lab` | Read-only model contract, chronological evidence, diagnostics, and player explanations |
-| `/league-setup` | Exact roster/scoring/playoff rules, draft slot, fingerprint, and YAML backup/restore |
-| `/draft-room` | Persistent manual picks, undo/replace, board filters, rosters, and gated recommendations |
-| `/post-draft` | Descriptive lineup, positional capital, value, risk, strategy, and limitation report |
-| `/learning-center` | Read-only previews and links for guides and notebooks |
+| `/league-history` | Historical-package quality, roster construction, drafted-only results, and outcome-model gate |
+| `/model-details` | Read-only model contract, chronological evidence, diagnostics, and player explanations |
+| `/learning-center` | Advanced guides and notebook previews for the underlying data science |
 
 The Data Center may run read-only audits, idempotent warehouse initialization, immutable nflverse/snap-count/FFC/manual ESPN archive actions, and the archive-first `league-history-v1` ZIP workflow. A history ZIP is preserved before in-memory validation and changes canonical tables only through one successful transaction. Standalone history CSV/JSON remains archive-only. Existing nflverse, participation, and ADP canonical loads remain explicit CLI handoffs (`load-nflverse`, `load-nflverse-participation`, and `load-adp`). Sleeper authentication/import remains unavailable.
 
 Model Lab never trains or promotes a model. It reads the validated Phase 3/4 publication and shows target/feature definitions, chronological folds, learned-versus-baseline decisions, metrics, residuals, feature importance, model cards, and served player explanations. Use the CLI training command only when intentionally creating a new model publication.
 
-League Setup persists normalized rules and the user's draft slot in DuckDB. Deterministic YAML exports include the ruleset fingerprint and reject tampering on import. Draft Room freezes the selected ruleset and projection/market lineage into each new session. Post-Draft reports may be generated for incomplete drafts, but those values are labeled provisional; missing ADP and uncertainty remain missing rather than being imputed.
+Draft Assistant quick start keeps the checked-in 2026 full-PPR scoring contract and offers two no-K/DST roster presets: Standard (2 WR, 1 FLEX) and WR/FLEX-heavy (3 WR, 2 FLEX), both with seven bench spots. The user chooses the preset, league size, draft position, and name. Saved **League settings** do not alter Quick Start. To use another full-PPR QB/RB/WR/TE/FLEX/SUPERFLEX/bench roster, save it in **League settings** and create the session in **Technical draft room**; scoring must still match the active projection publication. Each session freezes its exact rules, projections, and optional market lineage. Draft reports may be generated for incomplete drafts, but those values are labeled provisional; missing ADP and uncertainty remain missing rather than being imputed. The 233 rookie heuristic rows are the explicit exception: they are unvalidated point estimates with `P10=P50=P90` and risk marked unavailable.
+
+The recommendation-first milestone passes Ruff, strict mypy across 97 source files, all 299 repository tests, the production audit across eight manifests and 12 immutable raw files, and a real browser walkthrough covering quick start, recommendation rendering, table-based user/opponent picks, search reset, persistence, rankings, help, and undo. The browser-created practice state was removed afterward and all local-state counters returned to zero. Hosted pull-request and resulting `main` workflows remain the publication gate; GitHub Actions is the live source of truth for that evidence.
 
 Phase 7 validation passed Ruff, strict mypy across 87 source files, 251 pytest tests in 127.81 seconds, AppTest with zero exceptions across all seven pages, and the CLI data audit across eight manifests and 12 verified immutable files. Real browser QA navigated the multipage app and successfully triggered the live Data Center audit action. See [the Phase 7 evaluation](docs/PHASE_7_STREAMLIT_EVALUATION.md).
 
-Hosted Phase 7 CI is not recorded as green. GitHub Actions was in a reported major outage when PR #7 was opened, and no workflow run registered for the branch. The existing hourly recovery reminder now tracks both the Phase 6 canceled run and the missing Phase 7 run; local validation is not presented as hosted-CI success.
+After service recovery, the Phase 7 pull-request rerun and a no-functional-change `main` retrigger both completed on hosted runners with every quality step green.
 
 ## Use the Phase 8 history framework
 
@@ -256,7 +262,7 @@ Roster construction and drafted-only optimal-lineup reports are descriptive. Mis
 
 Start the guided human test with [the Human Testing Guide](docs/HUMAN_TESTING_GUIDE.md), then use [the League History Import Guide](docs/LEAGUE_HISTORY_IMPORT_GUIDE.md) for the manual historical-data workflow.
 
-Phase 8 validation passed Ruff, strict mypy across 92 source files, all 281 repository tests in 139.01 seconds, AppTest with zero exceptions across all eight pages, the production data audit across eight manifests and 12 verified immutable files, and real browser checks of the history, Data Center, and protected local-reset workflows. Hosted CI remains a separate publication condition. See [the Phase 8 evaluation](docs/PHASE_8_LEAGUE_HISTORY_EVALUATION.md).
+Phase 8 validation passed Ruff, strict mypy across 92 source files, all 281 repository tests in 139.01 seconds, AppTest with zero exceptions across all eight pages, the production data audit across eight manifests and 12 verified immutable files, and real browser checks of the history, Data Center, and protected local-reset workflows. PR #8 and its resulting `main` run later completed on hosted runners with every quality step green. See [the Phase 8 evaluation](docs/PHASE_8_LEAGUE_HISTORY_EVALUATION.md).
 
 ## Learn the system
 

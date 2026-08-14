@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from fantasy_draft_ai.draft.pool import FrozenDraftPlayer
@@ -32,8 +33,16 @@ def _player(
         prediction_status=status,
         projection_source=source,
         projection_method="test-method",
+        market_source="ffc" if average_pick is not None else None,
+        market_snapshot_id="snapshot-1" if average_pick is not None else None,
+        market_captured_at=(
+            datetime(2026, 8, 1, tzinfo=UTC) if average_pick is not None else None
+        ),
         average_pick=average_pick,
         availability_scale=scale,
+        availability_evidence=(
+            "source_reported_standard_deviation" if average_pick is not None else None
+        ),
         mapping_confidence="reviewed" if average_pick is not None else None,
     )
 
@@ -102,3 +111,19 @@ def test_board_probability_and_adp_value_are_missing_data_safe(
     assert 0 <= mapped.probability_gone_before_user_pick <= 1
     assert projection_only.average_pick is None
     assert projection_only.probability_gone_before_user_pick is None
+
+
+def test_board_hides_partial_market_evidence(
+    rules_factory: Callable[..., LeagueRules],
+) -> None:
+    rules = rules_factory(teams=4, wr=1, rb=0, qb=0, te=0, bench=0)
+    partial = replace(
+        _player("partial", "WR", 80, 100, 120, average_pick=2, scale=1),
+        availability_evidence=None,
+    )
+
+    row = build_draft_board(_state(rules), [partial])[0]
+
+    assert row.average_pick is None
+    assert row.adp_value_at_current_pick is None
+    assert row.probability_gone_before_user_pick is None

@@ -10,7 +10,7 @@ from collections import Counter
 from dataclasses import dataclass
 from math import isclose
 
-from fantasy_draft_ai.draft.pool import FrozenDraftPlayer
+from fantasy_draft_ai.draft.pool import FrozenDraftPlayer, is_mapped_market_confidence
 from fantasy_draft_ai.draft.repository import (
     DraftRepository,
     DraftSessionInfo,
@@ -230,7 +230,7 @@ def prepare_draft_room(
         compatible_market_rows=compatible_count,
         excluded_market_rows=len(excluded_market),
         mapped_market_rows=mapped_count,
-        matched_market_rows=sum(player.has_market_evidence for player in players),
+        matched_market_rows=sum(player.has_mapped_market_evidence for player in players),
         required_market_coverage=required_market_coverage,
         scoring_format=scoring_format,
         adp_market_board=adp_market_board,
@@ -430,7 +430,7 @@ def _canonical_market_id(row: AdpMarketRow) -> str | None:
     value = row.identity.player_id
     if value is None or not value.strip():
         return None
-    if row.mapping_confidence.strip().casefold() in {"unresolved", "pending", "none"}:
+    if not is_mapped_market_confidence(row.mapping_confidence):
         return None
     return value.strip()
 

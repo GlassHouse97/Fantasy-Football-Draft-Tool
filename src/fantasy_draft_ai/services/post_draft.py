@@ -570,10 +570,12 @@ def _analyze_players(
                     else player.market_captured_at.isoformat()
                 ),
                 mapping_confidence=player.mapping_confidence,
-                average_pick=player.average_pick,
+                average_pick=(
+                    player.average_pick if player.has_mapped_market_evidence else None
+                ),
                 pick_value_vs_adp=(
                     None
-                    if player.average_pick is None
+                    if not player.has_mapped_market_evidence or player.average_pick is None
                     else float(pick.overall_pick) - player.average_pick
                 ),
                 replacement_points=line,
@@ -735,7 +737,7 @@ def _strategy_comparisons(
     draftable_pool = tuple(
         player for player in pool if player.position in _draftable_positions(state)
     )
-    market_missing = sum(not player.has_market_evidence for player in draftable_pool)
+    market_missing = sum(not player.has_mapped_market_evidence for player in draftable_pool)
     for strategy_id, label, description in specs:
         if strategy_id == "market_consensus" and market_missing:
             comparisons.append(

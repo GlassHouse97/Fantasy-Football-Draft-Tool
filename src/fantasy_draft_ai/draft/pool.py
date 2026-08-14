@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+MAPPED_MARKET_CONFIDENCE = frozenset({"exact", "high", "reviewed"})
+
+
+def is_mapped_market_confidence(value: str | None) -> bool:
+    """Return whether a confidence label is eligible for canonical market use."""
+
+    return (value or "").strip().casefold() in MAPPED_MARKET_CONFIDENCE
 
 
 @dataclass(frozen=True)
@@ -52,6 +61,28 @@ class FrozenDraftPlayer:
     @property
     def has_market_evidence(self) -> bool:
         return self.average_pick is not None and self.availability_scale is not None
+
+    @property
+    def has_mapped_market_evidence(self) -> bool:
+        """Whether complete, finite, canonically linked market evidence is safe to use."""
+
+        captured_at = self.market_captured_at
+        return (
+            self.has_market_evidence
+            and is_mapped_market_confidence(self.mapping_confidence)
+            and bool((self.market_source or "").strip())
+            and bool((self.market_snapshot_id or "").strip())
+            and bool((self.availability_evidence or "").strip())
+            and captured_at is not None
+            and captured_at.tzinfo is not None
+            and captured_at.utcoffset() is not None
+            and self.average_pick is not None
+            and math.isfinite(self.average_pick)
+            and self.average_pick >= 1.0
+            and self.availability_scale is not None
+            and math.isfinite(self.availability_scale)
+            and self.availability_scale > 0.0
+        )
 
     @property
     def has_outcome_interval(self) -> bool:

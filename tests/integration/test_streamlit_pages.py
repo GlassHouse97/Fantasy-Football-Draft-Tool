@@ -7,6 +7,9 @@ from streamlit.testing.v1 import AppTest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PAGE_CASES = (
+    ("fantasy_draft_ai.ui.pages.draft_assistant", "Draft Assistant"),
+    ("fantasy_draft_ai.ui.pages.rankings", "Player rankings"),
+    ("fantasy_draft_ai.ui.pages.help", "How to use the app"),
     ("fantasy_draft_ai.ui.pages.home", "Project Status"),
     ("fantasy_draft_ai.ui.pages.data_center", "Data Center"),
     ("fantasy_draft_ai.ui.pages.league_history", "League History"),
@@ -22,7 +25,7 @@ def test_multipage_entrypoint_loads_default_route() -> None:
     app = AppTest.from_file(str(PROJECT_ROOT / "app.py"), default_timeout=45).run()
 
     assert len(app.exception) == 0
-    assert [title.value for title in app.title] == ["Project Status"]
+    assert [title.value for title in app.title] == ["Draft Assistant"]
 
 
 @pytest.mark.parametrize(("module", "expected_title"), PAGE_CASES)

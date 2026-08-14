@@ -130,17 +130,12 @@ def estimate_availability(
         sample_size=sample_size,
         config=config,
     )
-    lower_boundary = current + 0.5
-    upper_boundary = following - 0.5
-    if upper_boundary <= lower_boundary:
-        probability_available = 1.0
-    else:
-        lower_z = (lower_boundary - mean) / spread.standard_deviation
-        upper_z = (upper_boundary - mean) / spread.standard_deviation
-        log_lower_survival = _normal_log_survival(lower_z)
-        log_upper_survival = _normal_log_survival(upper_z)
-        probability_available = math.exp(min(0.0, log_upper_survival - log_lower_survival))
-        probability_available = min(1.0, max(0.0, probability_available))
+    probability_available = conditional_normal_availability(
+        average_pick=mean,
+        current_pick=current,
+        next_pick=following,
+        standard_deviation=spread.standard_deviation,
+    )
     probability_selected = 1.0 - probability_available
     return AvailabilityEstimate(
         identity=identity,
@@ -156,6 +151,39 @@ def estimate_availability(
         probability_selected_before_next_pick=probability_selected,
         probability_available_at_next_pick=probability_available,
     )
+
+
+def conditional_normal_availability(
+    *,
+    average_pick: float,
+    current_pick: float,
+    next_pick: float,
+    standard_deviation: float,
+) -> float:
+    """Return ``P(X >= next boundary | X > current boundary)`` in stable log space.
+
+    Consecutive snake-turn picks have no intervening selection and therefore return one.
+    The caller must supply a frozen, already selected market-distribution scale.
+    """
+
+    mean = _positive_pick(average_pick, "average_pick")
+    current = _positive_pick(current_pick, "current_pick")
+    following = _positive_pick(next_pick, "next_pick")
+    scale = float(standard_deviation)
+    if following <= current:
+        raise ValueError("next_pick must be greater than current_pick.")
+    if not math.isfinite(scale) or scale <= 0.0:
+        raise ValueError("standard_deviation must be finite and positive.")
+    lower_boundary = current + 0.5
+    upper_boundary = following - 0.5
+    if upper_boundary <= lower_boundary:
+        return 1.0
+    lower_z = (lower_boundary - mean) / scale
+    upper_z = (upper_boundary - mean) / scale
+    log_lower_survival = _normal_log_survival(lower_z)
+    log_upper_survival = _normal_log_survival(upper_z)
+    probability = math.exp(min(0.0, log_upper_survival - log_lower_survival))
+    return min(1.0, max(0.0, probability))
 
 
 def normal_survival(value: float, *, mean: float, standard_deviation: float) -> float:

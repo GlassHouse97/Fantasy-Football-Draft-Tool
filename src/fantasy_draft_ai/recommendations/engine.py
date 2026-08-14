@@ -139,7 +139,7 @@ def generate_recommendations(
     premetrics: list[tuple[float, FrozenDraftPlayer, float, float, float, float]] = []
     for player in available:
         baseline = replacement.get(player.position)
-        if baseline is None or not player.has_market_evidence:
+        if baseline is None or not player.has_mapped_market_evidence:
             continue
         after = assign_roster(
             [

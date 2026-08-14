@@ -139,7 +139,7 @@ class DraftRepository:
                         pool_fingerprint,
                         engine_config_fingerprint,
                         len(players),
-                        sum(player.has_market_evidence for player in players),
+                        sum(player.has_mapped_market_evidence for player in players),
                         recommendation_status,
                         recommendation_message,
                         random_seed,
@@ -301,7 +301,9 @@ class DraftRepository:
                 raise DraftStateError("Frozen session player pool fingerprint is invalid.")
             if info.player_pool_rows != len(players):
                 raise DraftStateError("Frozen session player count does not reconcile.")
-            if info.mapped_market_rows != sum(player.has_market_evidence for player in players):
+            if info.mapped_market_rows != sum(
+                player.has_mapped_market_evidence for player in players
+            ):
                 raise DraftStateError("Frozen mapped-market count does not reconcile.")
             return state
 

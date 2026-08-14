@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from fantasy_draft_ai.models.adp.availability import (
+    conditional_normal_availability,
     estimate_availability,
     estimate_pick_spread,
     normal_survival,
@@ -122,6 +123,18 @@ def test_consecutive_picks_have_no_intervening_selection_and_extreme_tails_are_s
     assert (
         tail.probability_available_at_next_pick + tail.probability_selected_before_next_pick
     ) == pytest.approx(1)
+    assert conditional_normal_availability(
+        average_pick=30,
+        current_pick=20,
+        next_pick=21,
+        standard_deviation=6,
+    ) == pytest.approx(1)
+    assert 0 <= conditional_normal_availability(
+        average_pick=1,
+        current_pick=200,
+        next_pick=202,
+        standard_deviation=1,
+    ) <= 1
 
 
 def test_normal_survival_does_not_require_scipy_and_validates_scale() -> None:
