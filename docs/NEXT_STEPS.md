@@ -31,9 +31,13 @@ The detailed walkthrough is in [Human Testing Guide](HUMAN_TESTING_GUIDE.md).
 - A recommendation appears whenever the user's team is on the clock.
 - The recommendation works from the published player projections even with no linked ADP rows.
 - The recommendation considers P50 value over replacement, same-position drop-off, current roster fit, and exact league roster demand.
-- The main card shows one best pick, alternatives, model projection, overall/position rank, and plain-English reasons.
-- The available-player table supports search, position filters, and a row-level Draft button.
-- **Player rankings** works before creating a session, offers quick Top 50/100/200/300 and complete all-player views, and ranks across positions by value over replacement rather than raw fantasy points.
+- The native dark Draft Night theme uses Inter body text, Barlow Condensed headings, stronger borders, and consistent QB/RB/WR/TE colors.
+- The compact turn card, dominant best-pick card, smaller alternatives, and roster summary create a clear live-draft hierarchy.
+- User turns show recommendation and roster first; opponent turns move the available-player table first so **Record taken** is immediately accessible.
+- The available-player table supports search, position pills, a row-level action, and pinned action/rank/player columns while limiting the live view to essential fields.
+- **Draft activity** now defaults to a real round-by-team snake board with position-colored cells, a highlighted user column, current-pick status, and an alternate chronological pick log.
+- **Player rankings** works before creating a session, offers quick Top 50/100/200/300 and complete all-player views, pins rank/player, and ranks across positions by value over replacement rather than raw fantasy points.
+- Honest rookie, ADP, and live-news notes remain visible through compact badges and expandable details instead of dominating the primary action area.
 - Technical data, model, history, and rules tools remain available under **Advanced**.
 
 Quick Start currently covers QB/RB/WR/TE/FLEX only. Kicker and team defense are not in the projection publication and cannot be recorded as placeholder picks, so Quick Start is not a complete live tracker for leagues that draft those positions. It offers Standard (2 WR, 1 FLEX) and WR/FLEX-heavy (3 WR, 2 FLEX) built-in no-K/DST presets; saved Advanced settings do not alter them. Another full-PPR QB/RB/WR/TE/FLEX/SUPERFLEX/bench roster must be saved in **League settings** and opened through **Technical draft room**. Other scoring systems, seasons, and keeper formats require a compatible projection publication or further implementation.
@@ -91,6 +95,9 @@ Use the app like a fantasy-football player rather than like its developer. Recor
 - whether entering an opponent pick is fast enough for a live draft;
 - whether **Best pick now** explains the choice in useful football language;
 - whether close alternatives are easy to compare;
+- whether the turn card and user/opponent render order make the next action obvious;
+- whether the position-colored snake board is fast to scan by round and team;
+- whether pinned player columns remain useful while scrolling wide tables;
 - whether drafted players disappear immediately;
 - whether undo and browser refresh behave exactly as expected;
 - which terms still feel technical;
@@ -104,8 +111,8 @@ The most important known limitation is live context: injury, suspension, and dep
 Prioritize these from actual human-test evidence:
 
 1. Improve search/keyboard speed and live pick entry.
-2. Add a compact visual draft board and clearer roster-needs panel.
-3. Add optional favorites, fades, personal tiers, and projection overrides.
+2. Add optional favorites, fades, personal tiers, and projection overrides.
+3. Add bye-week and team-stack context to the existing roster panel.
 4. Add a supported live or import-based Sleeper/ESPN draft sync, with explicit authorization and failure handling.
 5. Wire a reviewed current-news/injury input with provenance and timestamps.
 6. Correctly review all 203 compatible ADP identities required to enable next-pick availability forecasts.

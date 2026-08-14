@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from collections.abc import Sequence
 from typing import Any
 
@@ -28,7 +29,13 @@ from fantasy_draft_ai.services.draft_room import (
     record_draft_pick,
     undo_draft_pick,
 )
-from fantasy_draft_ai.ui.common import render_page_header
+from fantasy_draft_ai.ui.common import (
+    position_cell_style,
+    position_option_label,
+    render_page_header,
+    render_position_badge,
+    render_section_header,
+)
 from fantasy_draft_ai.ui.context import AppContext, load_app_context
 from fantasy_draft_ai.ui.redraft_presets import (
     DEFAULT_REDRAFT_PRESET_KEY,
@@ -52,9 +59,21 @@ def _render_feedback() -> None:
         return
     kind, message = feedback
     if kind == "success":
-        st.success(str(message))
+        st.toast(str(message), icon=":material/check_circle:")
     else:
         st.error(str(message))
+
+
+def _team_display_name(team_id: str | None) -> str:
+    """Turn internal team IDs into compact draft-room labels."""
+
+    if team_id is None:
+        return "Complete"
+    suffix = team_id.removeprefix("team-")
+    try:
+        return f"Team {int(suffix)}"
+    except ValueError:
+        return team_id
 
 
 def _load_sessions(context: AppContext) -> tuple[Any, ...]:
@@ -82,6 +101,17 @@ def _render_projection_confidence_warning(players: Sequence[FrozenDraftPlayer]) 
             "fallback. P10, P50, and P90 are identical, so risk is not estimated; treat "
             "those players as lower-confidence options."
         )
+
+
+def _uses_unvalidated_fallback(
+    session: DraftRoomSession,
+    player_id: str,
+) -> bool:
+    return any(
+        player.player_id == player_id
+        and "fallback_unvalidated" in player.prediction_status.strip().casefold()
+        for player in session.players
+    )
 
 
 def _quick_start(context: AppContext, *, expanded: bool) -> None:
@@ -176,7 +206,7 @@ def _select_session(
             session_ids,
             index=session_ids.index(selected_id),
             format_func=lambda value: next(
-                f"{item.session_name} · {item.current_version} picks/events · {item.status}"
+                f"{item.session_name} · {item.status.replace('_', ' ')}"
                 for item in sessions
                 if item.session_id == value
             ),
@@ -234,23 +264,51 @@ def _render_turn_bar(context: AppContext, session: DraftRoomSession) -> None:
         if state.current_overall_pick is None
         else (state.current_overall_pick - 1) // state.rules.teams + 1
     )
-    metric_one, metric_two, metric_three, action = st.columns([1, 1, 1.4, 1.1])
-    metric_one.metric("Pick", state.current_overall_pick or "Complete")
-    metric_two.metric("Round", round_number or "Complete")
-    if state.complete:
-        metric_three.metric("Status", "Draft complete")
-    elif state.is_user_turn:
-        metric_three.metric("On the clock", "You")
-    else:
-        metric_three.metric("On the clock", state.current_team_id or "Complete")
-    if action.button(
-        "Undo last pick",
-        icon=":material/undo:",
-        disabled=not state.picks,
-        width="stretch",
-        key=f"assistant_undo_{state.session_id}_{state.version}",
-    ):
-        _undo_latest(context, session)
+    with st.container(border=True):
+        with st.container(horizontal=True, vertical_alignment="center"):
+            if state.complete:
+                st.badge("Draft complete", icon=":material/check_circle:", color="green")
+            elif state.is_user_turn:
+                st.badge("Your pick", icon=":material/timer:", color="green")
+            else:
+                st.badge("Opponent pick", icon=":material/schedule:", color="blue")
+            st.caption(
+                f"{session.info.session_name} · {state.rules.teams}-team snake · "
+                f"slot {state.user_draft_slot}"
+            )
+        with st.container(horizontal=True, vertical_alignment="center"):
+            st.metric(
+                "Overall pick",
+                state.current_overall_pick or "Complete",
+                icon=":material/tag:",
+                border=True,
+                width=150,
+            )
+            st.metric(
+                "Round",
+                round_number or "Complete",
+                icon=":material/replay:",
+                border=True,
+                width=150,
+            )
+            st.metric(
+                "On the clock",
+                "You"
+                if state.is_user_turn
+                else _team_display_name(state.current_team_id),
+                icon=":material/person:",
+                border=True,
+                width=150,
+            )
+            undo_clicked = st.button(
+                "Undo last pick",
+                icon=":material/undo:",
+                disabled=not state.picks,
+                width=150,
+                key=f"assistant_undo_{state.session_id}_{state.version}",
+            )
+        if undo_clicked:
+            _undo_latest(context, session)
 
 
 def _render_candidate_card(
@@ -261,24 +319,32 @@ def _render_candidate_card(
     primary: bool,
 ) -> None:
     with st.container(border=True):
-        label = "Best pick now" if primary else "Alternative"
-        st.caption(label.upper())
-        st.subheader(f"{candidate.display_name} · {candidate.position}{candidate.position_rank}")
-        with st.container(horizontal=True):
-            st.metric("Projected points", f"{candidate.p50:.1f}")
-            st.metric("Value over replacement", f"+{candidate.p50_vorp:.1f}")
-            st.metric("Overall rank", f"#{candidate.overall_rank}")
         if primary:
-            for reason in candidate.reasons[:3]:
-                st.write(f"- {reason}")
+            st.badge(
+                "Best pick now",
+                icon=":material/auto_awesome:",
+                color="green",
+            )
         else:
-            st.caption(candidate.reasons[0])
-        if candidate.probability_available_next_pick is None:
-            st.caption("Next-pick market timing is not available yet.")
-        else:
+            st.badge("Strong alternative", icon=":material/compare_arrows:", color="blue")
+        st.subheader(candidate.display_name)
+        with st.container(horizontal=True, vertical_alignment="center"):
+            render_position_badge(
+                candidate.position,
+                f"{candidate.position}{candidate.position_rank}",
+            )
+            st.badge(f"Overall #{candidate.overall_rank}", color="gray")
+            st.badge(f"Tier {candidate.tier}", color="violet")
+            if _uses_unvalidated_fallback(session, candidate.player_id):
+                st.badge(
+                    "Lower-confidence rookie estimate",
+                    icon=":material/warning:",
+                    color="orange",
+                )
+        if _uses_unvalidated_fallback(session, candidate.player_id):
             st.caption(
-                f"Chance available at your next pick: "
-                f"{candidate.probability_available_next_pick:.0%}"
+                "Point estimate only; downside, upside, and risk are not estimated for "
+                "this player."
             )
         if st.button(
             f"Draft {candidate.display_name}",
@@ -291,6 +357,41 @@ def _render_candidate_card(
             ),
         ):
             _record_player(context, session, candidate.player_id, candidate.display_name)
+        with st.container(horizontal=True):
+            st.metric(
+                "Projected points",
+                f"{candidate.p50:.1f}",
+                icon=":material/query_stats:",
+                border=True,
+                width=150,
+            )
+            st.metric(
+                "Value over replacement",
+                f"+{candidate.p50_vorp:.1f}",
+                icon=":material/trending_up:",
+                border=True,
+                width=150,
+            )
+            st.metric(
+                "Floor — ceiling",
+                f"{candidate.p10:.0f} — {candidate.p90:.0f}",
+                icon=":material/height:",
+                border=True,
+                width=150,
+            )
+        if primary:
+            st.markdown("**Why the model likes this pick**")
+            for reason in candidate.reasons[:3]:
+                st.markdown(f"- :material/check_circle: {reason}")
+        else:
+            st.caption(candidate.reasons[0])
+        if candidate.probability_available_next_pick is None:
+            st.caption("Next-pick market timing is not available yet.")
+        else:
+            st.caption(
+                f"Chance available at your next pick: "
+                f"{candidate.probability_available_next_pick:.0%}"
+            )
 
 
 def _render_recommendations(
@@ -300,13 +401,19 @@ def _render_recommendations(
 ) -> None:
     state = session.state
     if state.complete:
-        st.success("Draft complete. Open Draft report to review your roster.")
+        st.success(
+            "Draft complete. Open Draft report to review your roster.",
+            icon=":material/check_circle:",
+        )
         return
     if not state.is_user_turn:
-        st.info(
-            f"{state.current_team_id} is picking now. Record that selection below; your "
-            f"recommendation will appear at pick {state.next_user_pick()}."
-        )
+        with st.container(border=True):
+            st.badge("Waiting for your turn", icon=":material/schedule:", color="blue")
+            st.subheader(f"{_team_display_name(state.current_team_id)} is on the clock")
+            st.caption(
+                "Record the selected player below. Your recommendation returns at "
+                f"pick {state.next_user_pick()}."
+            )
         return
     if not advice.available or not advice.candidates:
         st.warning(advice.message)
@@ -315,11 +422,18 @@ def _render_recommendations(
     if len(advice.candidates) > 1:
         gap = top.decision_score - advice.candidates[1].decision_score
         if gap < 5:
-            st.info("This is a close decision. Compare the alternatives before making the pick.")
+            st.info(
+                "This is a close decision. Compare the alternatives before making the pick.",
+                icon=":material/balance:",
+            )
     _render_candidate_card(context, session, top, primary=True)
     alternatives = advice.candidates[1:4]
     if alternatives:
-        st.subheader("Other strong choices")
+        render_section_header(
+            "Other strong choices",
+            "Use these when roster construction or personal preference breaks a close tie.",
+            icon=":material/compare_arrows:",
+        )
         for candidate in alternatives:
             _render_candidate_card(context, session, candidate, primary=False)
     st.caption(
@@ -348,17 +462,32 @@ def _roster_records(session: DraftRoomSession) -> list[dict[str, Any]]:
 
 
 def _render_roster(session: DraftRoomSession) -> None:
-    st.subheader("My roster")
-    records = _roster_records(session)
-    if not records:
-        st.caption("Your drafted players will appear here.")
-        return
-    st.dataframe(
-        records,
-        hide_index=True,
-        width="stretch",
-        column_config={"Projection": st.column_config.NumberColumn(format="%.1f")},
-    )
+    with st.container(border=True):
+        render_section_header(
+            "My roster",
+            f"Draft slot {session.state.user_draft_slot}",
+            icon=":material/groups:",
+        )
+        records = _roster_records(session)
+        counts = Counter(record["Pos"] for record in records)
+        with st.container(horizontal=True):
+            for position in ("QB", "RB", "WR", "TE"):
+                render_position_badge(position, f"{position} {counts[position]}")
+        if not records:
+            st.caption("Your drafted players will appear here as you build the roster.")
+            return
+        roster_frame = pd.DataFrame.from_records(records)
+        styled_roster = roster_frame.style.map(position_cell_style, subset=["Pos"])
+        st.dataframe(
+            styled_roster,
+            hide_index=True,
+            width="stretch",
+            row_height=38,
+            column_config={
+                "Player": st.column_config.TextColumn(pinned=True, width="medium"),
+                "Projection": st.column_config.NumberColumn(format="%.1f"),
+            },
+        )
 
 
 def _record_table_pick(
@@ -403,23 +532,37 @@ def _render_available_players(context: AppContext, session: DraftRoomSession) ->
         return
     rankings = build_projection_rankings(state.rules, session.players)
     available = [row for row in rankings if row.player_id not in state.selected_player_ids]
-    st.subheader("Available players")
+    render_section_header(
+        "Available players",
+        "Search the board and record the player selected in the room.",
+        icon=":material/format_list_numbered:",
+    )
     owner = "your roster" if state.is_user_turn else state.current_team_id
-    st.caption(f"Recording pick {state.current_overall_pick} for {owner}.")
-    search_col, position_col = st.columns([2, 1])
+    owner_label = "your roster" if state.is_user_turn else _team_display_name(owner)
+    st.badge(
+        f"Pick {state.current_overall_pick} · {owner_label}",
+        icon=":material/touch_app:",
+        color="green" if state.is_user_turn else "blue",
+    )
     search_key = f"assistant_search_{state.session_id}"
-    search = search_col.text_input(
-        "Search",
-        placeholder="Type a player name",
-        key=search_key,
-    )
     positions = sorted({row.position for row in available})
-    selected_positions = position_col.multiselect(
-        "Position",
-        positions,
-        default=positions,
-        key=f"assistant_positions_{state.session_id}",
-    )
+    with st.container(border=True):
+        search = st.text_input(
+            "Search players",
+            placeholder="Type a player name",
+            key=search_key,
+            icon=":material/search:",
+        )
+        selected_position_value = st.pills(
+            "Positions",
+            positions,
+            selection_mode="multi",
+            default=positions,
+            format_func=position_option_label,
+            key=f"assistant_positions_{state.session_id}",
+            width="stretch",
+        )
+    selected_positions = list(selected_position_value or ())
     normalized_search = search.strip().casefold()
     filtered = [
         row
@@ -427,11 +570,7 @@ def _render_available_players(context: AppContext, session: DraftRoomSession) ->
         if row.position in selected_positions
         and normalized_search in row.display_name.casefold()
     ][:250]
-    action_label = (
-        ":material/add: Record my pick"
-        if state.is_user_turn
-        else ":material/check: Record taken"
-    )
+    action_label = "Record my pick" if state.is_user_turn else "Record taken"
     records = [
         {
             "Action": action_label,
@@ -441,25 +580,26 @@ def _render_available_players(context: AppContext, session: DraftRoomSession) ->
             "Pos rank": row.position_rank,
             "Tier": row.tier,
             "Projection": row.p50,
-            "Value": row.p50_vorp,
-            "Floor": row.p10,
-            "Ceiling": row.p90,
-            "ADP": row.average_pick if row.average_pick is not None else float("nan"),
-            "Risk": row.risk.title(),
+            "VORP": row.p50_vorp,
         }
         for row in filtered
     ]
     click_key = f"assistant_table_click_{state.session_id}_{state.version}"
     if records:
+        player_frame = pd.DataFrame.from_records(records)
+        styled_players = player_frame.style.map(position_cell_style, subset=["Pos"])
         st.dataframe(
-            pd.DataFrame.from_records(records),
+            styled_players,
             hide_index=True,
             width="stretch",
-            height=560,
+            height=520,
+            row_height=40,
             column_config={
                 "Action": st.column_config.ButtonColumn(
                     "Record selection",
                     type="secondary",
+                    pinned=True,
+                    width="medium",
                     on_click=_record_table_pick,
                     args=(
                         context,
@@ -471,44 +611,169 @@ def _render_available_players(context: AppContext, session: DraftRoomSession) ->
                     ),
                     key=click_key,
                 ),
-                "Rank": st.column_config.NumberColumn(format="#%d"),
+                "Rank": st.column_config.NumberColumn(
+                    format="#%d",
+                    pinned=True,
+                    width="small",
+                ),
+                "Player": st.column_config.TextColumn(pinned=True, width="medium"),
+                "Pos": st.column_config.TextColumn(width="small"),
+                "Pos rank": st.column_config.NumberColumn(format="#%d", width="small"),
+                "Tier": st.column_config.NumberColumn(format="%d", width="small"),
                 "Projection": st.column_config.NumberColumn(format="%.1f"),
-                "Value": st.column_config.NumberColumn(
-                    "Value over replacement",
+                "VORP": st.column_config.NumberColumn(
+                    "VORP",
                     format="%+.1f",
                     help="Projected points above the league-specific replacement player.",
                 ),
-                "Floor": st.column_config.NumberColumn(format="%.1f"),
-                "Ceiling": st.column_config.NumberColumn(format="%.1f"),
-                "ADP": st.column_config.NumberColumn(format="%.1f"),
             },
         )
     else:
-        st.info("No available player matches those filters.")
+        st.info("No available player matches those filters.", icon=":material/search_off:")
     st.caption(
-        f"{len(available):,} players remain. Rankings use your league size and roster demand."
+        f"Showing {len(filtered):,} of {len(available):,} remaining players. The live board "
+        "shows at most 250 matches and uses your league size and roster demand."
     )
+
+
+def _draft_board_frames(session: DraftRoomSession) -> tuple[pd.DataFrame, pd.DataFrame, str]:
+    """Build a round-by-slot snake board and its position styling metadata."""
+
+    state = session.state
+    slot_labels = [
+        f"You · {slot}" if slot == state.user_draft_slot else f"T{slot}"
+        for slot in range(1, state.rules.teams + 1)
+    ]
+    user_column = slot_labels[state.user_draft_slot - 1]
+    rows: list[dict[str, Any]] = []
+    positions: list[dict[str, Any]] = []
+    picks_by_location = {(pick.round, pick.draft_slot): pick for pick in state.picks}
+    current_round = (
+        None
+        if state.current_overall_pick is None
+        else (state.current_overall_pick - 1) // state.rules.teams + 1
+    )
+    for round_number in range(1, state.rules.draft.rounds + 1):
+        row: dict[str, Any] = {"Round": round_number}
+        position_row: dict[str, Any] = {"Round": ""}
+        for slot, column in enumerate(slot_labels, start=1):
+            pick = picks_by_location.get((round_number, slot))
+            if pick is not None:
+                row[column] = f"{pick.overall_pick:02d} · {pick.player_name} · {pick.position}"
+                position_row[column] = pick.position
+            elif round_number == current_round and slot == state.current_draft_slot:
+                row[column] = "YOUR PICK" if state.is_user_turn else "ON THE CLOCK"
+                position_row[column] = "CURRENT_USER" if state.is_user_turn else "CURRENT"
+            else:
+                row[column] = ""
+                position_row[column] = ""
+        rows.append(row)
+        positions.append(position_row)
+    return (
+        pd.DataFrame.from_records(rows),
+        pd.DataFrame.from_records(positions),
+        user_column,
+    )
+
+
+def _style_draft_board(
+    board: pd.DataFrame,
+    positions: pd.DataFrame,
+    user_column: str,
+) -> Any:
+    """Apply stable position and user-column colors without changing board values."""
+
+    def board_styles(_: pd.DataFrame) -> pd.DataFrame:
+        styles = pd.DataFrame("", index=board.index, columns=board.columns)
+        for row_index in board.index:
+            for column in board.columns:
+                marker = str(positions.at[row_index, column])
+                if marker == "CURRENT_USER":
+                    style = "background-color: #14532D; color: #F8FAFC; font-weight: 800;"
+                elif column == user_column:
+                    style = "background-color: #713F12; color: #F8FAFC; font-weight: 800;"
+                elif marker == "CURRENT":
+                    style = "background-color: #1E3A8A; color: #F8FAFC; font-weight: 800;"
+                else:
+                    style = position_cell_style(marker)
+                styles.at[row_index, column] = style
+        return styles
+
+    return board.style.apply(board_styles, axis=None)
 
 
 def _render_history(session: DraftRoomSession) -> None:
     state = session.state
-    with st.expander("Draft board and history", icon=":material/history:"):
+    render_section_header(
+        "Draft activity",
+        "Follow the snake board by team or switch to the chronological pick log.",
+        icon=":material/grid_view:",
+    )
+    with st.container(border=True):
+        view = st.segmented_control(
+            "Draft activity view",
+            ("Draft board", "Pick log"),
+            default="Draft board",
+            required=True,
+            label_visibility="collapsed",
+            key=f"assistant_activity_view_{state.session_id}",
+        )
+        if view == "Draft board":
+            board, positions, user_column = _draft_board_frames(session)
+            board_config: dict[str, Any] = {
+                "Round": st.column_config.NumberColumn(
+                    "Round",
+                    format="%d",
+                    pinned=True,
+                    width="small",
+                )
+            }
+            for column in board.columns:
+                if column != "Round":
+                    board_config[column] = st.column_config.TextColumn(
+                        column,
+                        pinned=column == user_column,
+                        width="medium",
+                    )
+            st.dataframe(
+                _style_draft_board(board, positions, user_column),
+                hide_index=True,
+                width="stretch",
+                height=min(620, 46 * (len(board) + 1)),
+                row_height=44,
+                column_config=board_config,
+            )
+            with st.container(horizontal=True):
+                for position in ("QB", "RB", "WR", "TE"):
+                    render_position_badge(position)
+                st.badge("Your team column", color="yellow")
+            return
         if not state.picks:
             st.caption("No picks have been recorded.")
             return
-        st.dataframe(
+        pick_log = pd.DataFrame.from_records(
             [
                 {
                     "Overall": pick.overall_pick,
                     "Round": pick.round,
-                    "Team": "You" if pick.draft_slot == state.user_draft_slot else pick.team_id,
+                    "Team": "You"
+                    if pick.draft_slot == state.user_draft_slot
+                    else _team_display_name(pick.team_id),
                     "Player": pick.player_name,
                     "Pos": pick.position,
                 }
                 for pick in reversed(state.picks)
-            ],
+            ]
+        )
+        st.dataframe(
+            pick_log.style.map(position_cell_style, subset=["Pos"]),
             hide_index=True,
             width="stretch",
+            row_height=38,
+            column_config={
+                "Overall": st.column_config.NumberColumn(format="#%d"),
+                "Player": st.column_config.TextColumn(pinned=True, width="medium"),
+            },
         )
 
 
@@ -516,7 +781,8 @@ def _render_method_details(
     session: DraftRoomSession,
     advice: ProjectionRecommendationResult,
 ) -> None:
-    with st.expander("How the recommendation works", icon=":material/info:"):
+    with st.expander("Projection and recommendation notes", icon=":material/info:"):
+        _render_projection_confidence_warning(session.players)
         st.write(
             "The assistant starts with the model's season projection, compares each player "
             "with the replacement option at that position, then adds current roster fit and "
@@ -537,23 +803,38 @@ def render() -> None:
     """Render the app's primary quick-start and live redraft experience."""
 
     context = load_app_context()
-    render_page_header(
-        "Draft Assistant",
-        "Your next pick, made simpler",
-        "Track every selection and get a fresh best-available recommendation when your team "
-        "is on the clock.",
-    )
-    _render_feedback()
     sessions = _load_sessions(context)
-    _quick_start(context, expanded=not sessions)
+    if sessions:
+        with st.container(horizontal=True, vertical_alignment="center"):
+            st.title("Draft Assistant", width="content")
+            st.badge("Live redraft", icon=":material/sports_football:", color="green")
+        st.caption("Track the room, see the best available value, and make the next pick.")
+    else:
+        render_page_header(
+            "Draft Assistant",
+            "Your next pick, made simpler",
+            "Track every selection and get a fresh best-available recommendation when your "
+            "team is on the clock.",
+        )
+    _render_feedback()
+    if not sessions:
+        _quick_start(context, expanded=True)
     session = _select_session(context, sessions)
     if session is None:
-        st.info("Start a draft above. The assistant will immediately rank the best players.")
+        if sessions:
+            _quick_start(context, expanded=True)
+            st.info(
+                "Choose a saved draft above, or start a new one. The assistant will "
+                "immediately rank the best players."
+            )
+        else:
+            st.info(
+                "Start a draft above. The assistant will immediately rank the best players."
+            )
         return
 
     _render_turn_bar(context, session)
     state = session.state
-    _render_projection_confidence_warning(session.players)
     advice = rank_best_available(
         state,
         session.players,
@@ -561,13 +842,22 @@ def render() -> None:
         context.guidance_config,
         limit=8,
     )
-    main, roster = st.columns([2.4, 1], gap="large")
-    with main:
+    if state.is_user_turn:
+        with st.container(horizontal=True, vertical_alignment="top", gap="large"):
+            with st.container(width=700):
+                _render_recommendations(context, session, advice)
+            with st.container(width=340):
+                _render_roster(session)
+        st.space("small")
+        _render_available_players(context, session)
+    elif state.complete:
         _render_recommendations(context, session, advice)
-    with roster:
         _render_roster(session)
-
-    st.divider()
-    _render_available_players(context, session)
+    else:
+        _render_available_players(context, session)
+        st.space("small")
+        _render_roster(session)
+    st.space("small")
     _render_history(session)
     _render_method_details(session, advice)
+    _quick_start(context, expanded=False)

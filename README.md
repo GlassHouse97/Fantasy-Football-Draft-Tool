@@ -28,6 +28,8 @@ The runnable local foundation includes:
 - an event-sourced snake-draft engine with immutable session pools, append-only picks, undo, replacement, and replay hashes;
 - exact ruleset-aware lineup assignment plus a seeded Monte Carlo and transparent recommendation baseline;
 - a quick-start redraft assistant with one-click picks, immediate projection-based advice, and a deterministic draft CLI;
+- a professional native dark Draft Night interface with Inter body text, Barlow Condensed headings, compact turn and recommendation cards, and position-aware color cues;
+- a round-by-team snake draft board plus streamlined, pinned available-player and rankings tables for faster live use;
 - league-adjusted player rankings based on value over replacement rather than raw cross-position points;
 - normalized, fingerprinted league setup persistence with YAML backup and restore;
 - an auditable Data Center and read-only Model Lab that preserve the data and model publication gates;
@@ -215,8 +217,8 @@ Streamlit exposes one stable route for each workflow:
 
 | Route | Purpose |
 |---|---|
-| `/` | Default quick start, best pick now, alternatives, one-click pick tracking, roster, and history |
-| `/rankings` | Searchable league-adjusted rankings with projections, uncertainty, tiers, and value over replacement; quick top-N views and an all-player view are available |
+| `/` | Default quick start, best pick now, alternatives, one-click pick tracking, compact roster, and round-by-team snake board |
+| `/rankings` | Searchable league-adjusted rankings with projections, uncertainty, tiers, value over replacement, pinned identity columns, quick top-N views, and an all-player view |
 | `/draft-report` | Descriptive lineup, positional capital, value, risk, strategy, and limitation report |
 | `/help` | Plain-language quick start, live-pick instructions, and recommendation glossary |
 | `/league-settings` | Advanced roster/scoring/playoff rules, draft slot, fingerprint, and YAML backup/restore |
@@ -226,6 +228,8 @@ Streamlit exposes one stable route for each workflow:
 | `/league-history` | Historical-package quality, roster construction, drafted-only results, and outcome-model gate |
 | `/model-details` | Read-only model contract, chronological evidence, diagnostics, and player explanations |
 | `/learning-center` | Advanced guides and notebook previews for the underlying data science |
+
+The current local interface uses Streamlit's native dark theme rather than fragile page-level CSS. Inter keeps controls and tables readable, while Barlow Condensed gives headings a clearer draft-night identity. Turn status, the primary recommendation, alternatives, and roster information are grouped into distinct bordered cards. On the user's turn, recommendation and roster context appear before the player pool; on an opponent's turn, the available-player table moves up so **Record taken** is the immediate action. The live table pins its action, rank, and player columns, while Player rankings pins rank and player. **Draft activity** defaults to a position-colored, round-by-team snake board with the user's column and current pick called out; a chronological pick log remains available as the alternate view. Projection, market, and live-news limitations remain accessible in compact badges and disclosure sections without dominating the main drafting workflow.
 
 The Data Center may run read-only audits, idempotent warehouse initialization, immutable nflverse/snap-count/FFC/manual ESPN archive actions, and the archive-first `league-history-v1` ZIP workflow. A history ZIP is preserved before in-memory validation and changes canonical tables only through one successful transaction. Standalone history CSV/JSON remains archive-only. Existing nflverse, participation, and ADP canonical loads remain explicit CLI handoffs (`load-nflverse`, `load-nflverse-participation`, and `load-adp`). Sleeper authentication/import remains unavailable.
 

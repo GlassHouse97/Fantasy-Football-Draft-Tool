@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from fantasy_draft_ai.ui.common import render_page_header
+from fantasy_draft_ai.ui.common import render_page_header, render_section_header
 
 
 def render() -> None:
@@ -15,22 +15,30 @@ def render() -> None:
         "Draft-day walkthrough",
         "You only need Draft Assistant and Player rankings for a normal practice or live draft.",
     )
-    st.subheader("Start in under a minute")
-    steps = st.columns(3)
-    with steps[0].container(border=True):
-        st.caption("STEP 1")
-        st.subheader("Set the draft")
-        st.write("Choose your league size, draft position, and a recognizable draft name.")
-    with steps[1].container(border=True):
-        st.caption("STEP 2")
-        st.subheader("Track every supported pick")
-        st.write("Record each QB, RB, WR, and TE selection in the exact draft order.")
-    with steps[2].container(border=True):
-        st.caption("STEP 3")
-        st.subheader("Use Best pick now")
-        st.write("When the app says **You** are on the clock, compare the top recommendation.")
+    render_section_header(
+        "Start in under a minute",
+        "Three steps take you from league setup to a live recommendation.",
+        icon=":material/rocket_launch:",
+    )
+    with st.container(horizontal=True):
+        with st.container(border=True, width=310, height="stretch"):
+            st.badge("Step 1", icon=":material/tune:", color="blue")
+            st.subheader("Set the draft")
+            st.caption("Choose your league size, draft position, and a recognizable name.")
+        with st.container(border=True, width=310, height="stretch"):
+            st.badge("Step 2", icon=":material/list_alt:", color="violet")
+            st.subheader("Track every pick")
+            st.caption("Record each QB, RB, WR, and TE selection in exact draft order.")
+        with st.container(border=True, width=310, height="stretch"):
+            st.badge("Step 3", icon=":material/auto_awesome:", color="green")
+            st.subheader("Use Best pick now")
+            st.caption("When the clock says **You**, compare the top recommendation.")
 
-    st.subheader("During the draft")
+    render_section_header(
+        "During the draft",
+        "The assistant updates immediately after every recorded selection.",
+        icon=":material/sports_football:",
+    )
     st.markdown(
         """
         1. Look at **On the clock** before recording a player.
@@ -41,14 +49,19 @@ def render() -> None:
         6. If you enter the wrong player, select **Undo last pick** immediately.
         """
     )
-    st.info(
-        "The app is a manual tracker today. It does not yet sync a live Sleeper or ESPN room, "
-        "so skipping supported opponents' picks makes its available-player list incorrect. "
-        "Quick Start cannot record K/DST selections and is not yet an exact live tracker for "
-        "leagues that draft those positions."
-    )
+    with st.container(border=True):
+        st.badge("Manual tracking", icon=":material/touch_app:", color="blue")
+        st.write(
+            "The app does not yet sync a live Sleeper or ESPN room. Record every supported "
+            "opponent pick so the available-player board stays accurate. Quick Start cannot "
+            "record K/DST selections."
+        )
 
-    st.subheader("How to read the recommendation")
+    render_section_header(
+        "How to read the recommendation",
+        "Projection estimates player output; draft value compares that output with alternatives.",
+        icon=":material/query_stats:",
+    )
     st.dataframe(
         [
             {
@@ -80,7 +93,11 @@ def render() -> None:
         "position, and fit with your current roster. It is a decision aid, not a guarantee."
     )
 
-    st.subheader("Current supported quick start")
+    render_section_header(
+        "Current supported quick start",
+        "Use these boundaries for a trustworthy first test.",
+        icon=":material/checklist:",
+    )
     st.write(
         "The current projection publication targets **2026 full PPR**. Quick start supports "
         "8, 10, 12, 14, or 16 teams. Choose either a standard 2-WR/1-FLEX roster or a deeper "
@@ -89,22 +106,23 @@ def render() -> None:
         "practice. Advanced scoring changes remain separate because a different scoring system "
         "requires compatible projections."
     )
-    st.warning(
-        "The model does not yet include live injury, suspension, or depth-chart news. Check a "
-        "current news source before making a real pick."
-    )
-    st.warning(
-        "Some rookies without enough historical evidence use an explicitly unvalidated "
-        "point-only fallback. Their P10, P50, and P90 values are identical, so risk is not "
-        "estimated; treat those projections as lower-confidence estimates."
-    )
+    with st.container(border=True):
+        st.badge("Before draft day", icon=":material/warning:", color="orange")
+        st.markdown(
+            "- **Check current player news.** Injuries, suspensions, and depth-chart changes "
+            "are not live in the model.\n"
+            "- **Use extra caution with rookie estimates.** Some rookies use an unvalidated "
+            "point estimate, so their downside and upside risk are not yet measured.\n"
+            "- **Use a no-K/DST format for exact tracking.** Those positions are not on the "
+            "current projection board."
+        )
 
-    with st.expander("Why is ADP blank?", icon=":material/help:"):
+    with st.expander("Why is market timing unavailable?", icon=":material/help:"):
         st.write(
             "The player projections and league-adjusted ranking are available now. ADP timing "
             "requires reviewed links between the market feed and canonical player IDs. Until "
-            "those links are verified, the app leaves ADP and next-pick probability blank rather "
-            "than guessing by name."
+            "those links are verified, Rankings hides ADP and the assistant leaves next-pick "
+            "probability unavailable rather than guessing by name."
         )
     with st.expander("Why do I have to enter opponents' picks?", icon=":material/help:"):
         st.write(

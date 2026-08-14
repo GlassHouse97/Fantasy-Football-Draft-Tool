@@ -146,7 +146,10 @@ with patch(
     app = next(button for button in app.button if button.label == "Start draft").click().run()
 
     assert len(app.exception) == 0
-    assert any(caption.value == "BEST PICK NOW" for caption in app.caption)
+    assert any("Best pick now" in markdown.value for markdown in app.markdown)
+    assert any(
+        "Lower-confidence rookie estimate" in markdown.value for markdown in app.markdown
+    )
     fallback_warning = next(
         warning.value for warning in app.warning if "point-only fallback" in warning.value
     )
@@ -170,13 +173,14 @@ with patch(
     assert after_pick.picks[0].player_name == drafted_name
     assert repository.session_info(session_id).recommendation_status != "recommendation_ready"
     assert len(app.exception) == 0
-    assert any("is picking now" in info.value for info in app.info)
+    assert any("Opponent pick" in markdown.value for markdown in app.markdown)
+    assert any(header.value.endswith("Available players") for header in app.header)
 
     app = next(button for button in app.button if button.label == "Undo last pick").click().run()
 
     assert len(app.exception) == 0
     assert repository.verify_session(session_id).picks == ()
-    assert any(caption.value == "BEST PICK NOW" for caption in app.caption)
+    assert any("Best pick now" in markdown.value for markdown in app.markdown)
 
     best_pick_button = next(
         button for button in app.button if button.label.startswith("Draft ")
@@ -226,7 +230,7 @@ st.write(st.session_state[search_key])
     assert state.current_overall_pick == 3
 
     app = app.run()
-    assert any("team-03 is picking now" in info.value for info in app.info)
+    assert any("Pick 3 · Team 3" in markdown.value for markdown in app.markdown)
     while not (state := repository.verify_session(session_id)).is_user_turn:
         next_player = next(
             player
@@ -243,7 +247,7 @@ st.write(st.session_state[search_key])
 
     assert state.current_overall_pick == 24
     app = app.run()
-    assert any(caption.value == "BEST PICK NOW" for caption in app.caption)
+    assert any("Best pick now" in markdown.value for markdown in app.markdown)
 
     for expected_pick in (24, 25):
         pick_button = next(
@@ -254,7 +258,7 @@ st.write(st.session_state[search_key])
 
     resumed = AppTest.from_string(script, default_timeout=60).run()
     assert len(resumed.exception) == 0
-    assert any("team-02 is picking now" in info.value for info in resumed.info)
+    assert any("Pick 26 · Team 2" in markdown.value for markdown in resumed.markdown)
     assert repository.verify_session(session_id).current_overall_pick == 26
 
 
@@ -327,12 +331,17 @@ with patch("fantasy_draft_ai.ui.pages.rankings.load_app_context", return_value=c
     app = AppTest.from_string(script, default_timeout=60).run()
 
     assert len(app.exception) == 0
-    show = next(widget for widget in app.selectbox if widget.label == "Show")
+    show = next(widget for widget in app.selectbox if widget.label == "Board size")
     assert "All players" in show.options
     app = show.set_value("All players").run()
 
     assert len(app.exception) == 0
-    assert len(app.dataframe[0].value) == 320
+    rankings_frame = next(
+        frame for frame in app.dataframe if "Player" in frame.value.columns
+    )
+    assert len(rankings_frame.value) == 320
+    assert "ADP" not in rankings_frame.value.columns
+    assert any("ADP is hidden" in caption.value for caption in app.caption)
     fallback_warning = next(
         warning.value for warning in app.warning if "point-only fallback" in warning.value
     )
