@@ -31,7 +31,7 @@ The detailed walkthrough is in [Human Testing Guide](HUMAN_TESTING_GUIDE.md).
 - A recommendation appears whenever the user's team is on the clock.
 - The recommendation works from the published player projections even with no linked ADP rows.
 - The recommendation considers P50 value over replacement, same-position drop-off, current roster fit, and exact league roster demand.
-- The native dark Draft Night theme uses Inter body text, Barlow Condensed headings, stronger borders, and consistent QB/RB/WR/TE colors.
+- The native dark Draft Night theme uses Inter body text, Outfit headings, stronger borders, and consistent QB/RB/WR/TE colors.
 - The compact turn card, dominant best-pick card, smaller alternatives, and roster summary create a clear live-draft hierarchy.
 - User turns show recommendation and roster first; opponent turns move the available-player table first so **Record taken** is immediately accessible.
 - The available-player table supports search, position pills, a row-level action, and pinned action/rank/player columns while limiting the live view to essential fields.
