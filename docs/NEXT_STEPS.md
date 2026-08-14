@@ -1,21 +1,17 @@
 # Next Steps
 
-## Current milestone
+## Current product milestone
 
-Phases 0 through 8 from the master specification are implemented locally. Phase 8 is the final planned phase, not the start of automatic championship modeling. It adds the safe league-history framework, descriptive reports, and the written evidence gate that prevents outcome training without enough real data.
+Phases 0 through 8 from the master specification are complete. The active follow-up milestone refocuses the technical foundation into the product the user originally requested: a redraft assistant that answers **who should I pick now?** from the players still available.
 
-The local app now has eight workspaces:
+The main workflow is now:
 
-| Route | Current status |
-|---|---|
-| `/status` | Ready; reports actual capability, evidence, blockers, and next actions. |
-| `/data-center` | Ready; inventories data, runs the audit, downloads the history template, and archive-first imports validated history ZIPs. |
-| `/league-history` | Ready; currently shows the truthful empty state because no personal history has been imported. |
-| `/model-lab` | Ready and read-only; player-model training/publication remains a deliberate CLI workflow. |
-| `/league-setup` | Ready; saves exact rules and supports fingerprint-checked YAML backup/restore. |
-| `/draft-room` | Manual state ready; recommendation/simulation remains ADP-identity-gated. |
-| `/post-draft` | Ready for complete or incomplete persisted sessions with explicit limitations. |
-| `/learning-center` | Ready; previews local guides and notebook Markdown without executing code. |
+1. Open **Draft Assistant**.
+2. Choose a built-in roster preset, league size, and draft position for supported 2026 full-PPR, no-K/DST play.
+3. Record every supported QB/RB/WR/TE pick in order, including opponents' selections.
+4. When your team is on the clock, use **Best pick now** and compare its alternatives.
+5. Check **Player rankings** for the searchable league-adjusted board; choose a quick top-N view or **All players**.
+6. Use **Undo last pick** if the live board was entered incorrectly.
 
 Start the app from `PS C:\Users\Chris D>`:
 
@@ -25,37 +21,54 @@ cd "C:\Users\Chris D\OneDrive - Musco Food Corporation\Desktop\Portfolio Data\Fa
 fantasy-draft app
 ```
 
-Use [the Human Testing Guide](HUMAN_TESTING_GUIDE.md) for the first click-through. Record confusing labels, unexpected behavior, unavailable-feature explanations, and the exact action/error when something fails. That usability pass is the safest next iteration after Phase 8.
+The detailed walkthrough is in [Human Testing Guide](HUMAN_TESTING_GUIDE.md).
 
-## Next-session handoff — August 6, 2026
+## What works now
 
-Today completed the Phase 8 history framework, the eighth Streamlit workspace, safe history import, reviewed historical identities, descriptive roster analysis, the outcome-model evidence gate, repository-wide tests, production audit, browser QA, commits, branch push, and draft PR #8. A protected **Restore app defaults** control was then added for repeatable human testing. It removes local setups and practice drafts while preserving source data, models, and history evidence.
+- The default page is **Draft Assistant**, not a project-status dashboard.
+- Quick start creates a persistent 2026 full-PPR snake draft from a roster preset, league size, draft position, and a name.
+- The app records supported QB/RB/WR/TE picks, removes drafted players, follows snake order, persists on refresh, and supports one-click undo.
+- A recommendation appears whenever the user's team is on the clock.
+- The recommendation works from the published player projections even with no linked ADP rows.
+- The recommendation considers P50 value over replacement, same-position drop-off, current roster fit, and exact league roster demand.
+- The main card shows one best pick, alternatives, model projection, overall/position rank, and plain-English reasons.
+- The available-player table supports search, position filters, and a row-level Draft button.
+- **Player rankings** works before creating a session, offers quick Top 50/100/200/300 and complete all-player views, and ranks across positions by value over replacement rather than raw fantasy points.
+- Technical data, model, history, and rules tools remain available under **Advanced**.
 
-When testing resumes:
+Quick Start currently covers QB/RB/WR/TE/FLEX only. Kicker and team defense are not in the projection publication and cannot be recorded as placeholder picks, so Quick Start is not a complete live tracker for leagues that draft those positions. It offers Standard (2 WR, 1 FLEX) and WR/FLEX-heavy (3 WR, 2 FLEX) built-in no-K/DST presets; saved Advanced settings do not alter them. Another full-PPR QB/RB/WR/TE/FLEX/SUPERFLEX/bench roster must be saved in **League settings** and opened through **Technical draft room**. Other scoring systems, seasons, and keeper formats require a compatible projection publication or further implementation.
 
-1. Open Project Status and decide whether to continue the current practice state or use **Local testing controls → Restore app defaults**.
-2. Walk through the app as a first-time fantasy-football user, without relying on the build documentation to explain each screen.
-3. Test saving rules, creating a practice draft, recording/undoing/replacing picks, refreshing, and reading the post-draft report.
-4. Inspect every locked feature and decide whether its explanation says what is missing and what you can do next.
-5. Download the history template and assess whether the manual data requirements are understandable before entering private data.
-6. Keep a specific list of UI simplifications: jargon to translate, advanced details to collapse, actions that need stronger hierarchy, and pages that need a single guided next step.
+The current production foundation remains:
 
-The next product iteration should prioritize that usability evidence. Do not add more modeling complexity merely because the technical foundation exists.
-
-## What is already usable without personal history
-
-You do not need a personal league-history package to open the app, inspect player models, save league rules, create a draft session, or manually record picks. The session is persisted in DuckDB and verified through event replay, so a browser refresh does not erase the draft.
-
-The current public-data foundation remains intact:
-
-- 25,037 canonical players and 199,629 weekly-stat rows;
+- 25,037 canonical players;
+- 199,629 weekly-stat rows;
 - 11,171 cutoff-safe player-season features and 9,804 historical targets;
-- one validated Phase 4 run with 24 registered routes and a 1,367-player 2026 board; and
-- 246 production ADP observations with transparent persistence/availability baselines.
+- one validated Phase 4 publication with 24 registered models and a 1,367-player 2026 projection board; and
+- 246 production ADP observations with transparent persistence and availability baselines.
 
-Live recommendation and Monte Carlo actions are still correctly locked because 0 of 203 compatible QB/RB/WR/TE ADP rows have reviewed canonical mappings. The 43 archived PK/DEF rows remain outside this ruleset's recommendation coverage. Manual drafting is a separate capability and remains usable.
+## Two recommendation layers
 
-To unlock reviewed market linkage, carefully complete the existing identity workflow and rebuild Phase 5 before creating a new frozen session:
+The app now keeps two distinct contracts instead of blocking all advice behind market data.
+
+### Projection-first guidance — usable now
+
+This is the primary **Best pick now** experience. It uses only evidence already validated for the draft session:
+
+- player P10/P50/P90 season projections;
+- league-specific replacement levels;
+- positional drop-off among available players;
+- exact starter/FLEX/bench rules; and
+- the user's current roster.
+
+Its score is a transparent, uncalibrated decision baseline. It is not a championship, playoff, or calibrated win probability.
+
+The board includes 233 live rookies whose rows are explicitly `rookie_heuristic_fallback_unvalidated`. They are point-only transparent heuristics with `P10=P50=P90` and unavailable risk estimates. They may appear in rankings or recommendations and must not be interpreted as validated uncertainty forecasts.
+
+### Market-enhanced simulation — still gated
+
+The Phase 6 Monte Carlo engine additionally models opponent selections and whether players may survive to the user's next pick. That contract correctly remains unavailable because 0 of 203 compatible QB/RB/WR/TE ADP rows currently have reviewed canonical mappings. Current ADP and next-pick timing are therefore unavailable for every compatible player. The configuration requires 100% compatible canonical market coverage, so all 203 rows must be reviewed correctly before this layer can become ready. The 43 archived PK/DEF rows remain outside the projected draftable-position scope.
+
+To unlock that optional layer, review identities carefully and rebuild Phase 5:
 
 ```powershell
 fantasy-draft data review-identities
@@ -67,46 +80,60 @@ fantasy-draft data audit
 fantasy-draft status
 ```
 
-Do not apply the generated worksheet without checking every decision, canonical player ID, reviewer, timestamp, and required note.
+Do not apply the generated worksheet without verifying every player ID, decision, reviewer, timestamp, and required note. Name matching is not an accepted shortcut.
+
+## Immediate human-test priorities
+
+Use the app like a fantasy-football player rather than like its developer. Record:
+
+- whether a new draft starts in under 30 seconds;
+- whether the next action is obvious at every turn;
+- whether entering an opponent pick is fast enough for a live draft;
+- whether **Best pick now** explains the choice in useful football language;
+- whether close alternatives are easy to compare;
+- whether drafted players disappear immediately;
+- whether undo and browser refresh behave exactly as expected;
+- which terms still feel technical;
+- which details should be collapsed or removed; and
+- which missing features would materially improve the next real draft.
+
+The most important known limitation is live context: injury, suspension, and depth-chart updates are not wired into the model or UI. Check current player news before acting on any recommendation.
+
+## Likely next product increments
+
+Prioritize these from actual human-test evidence:
+
+1. Improve search/keyboard speed and live pick entry.
+2. Add a compact visual draft board and clearer roster-needs panel.
+3. Add optional favorites, fades, personal tiers, and projection overrides.
+4. Add a supported live or import-based Sleeper/ESPN draft sync, with explicit authorization and failure handling.
+5. Wire a reviewed current-news/injury input with provenance and timestamps.
+6. Correctly review all 203 compatible ADP identities required to enable next-pick availability forecasts.
+7. Add cheat-sheet export after the on-screen rankings flow is validated.
+
+Do not start outcome/championship modeling automatically. That remains evidence-gated.
 
 ## Optional personal-history workflow
 
-Production currently contains 0 league-history packages, league-seasons, team outcomes, roster-construction rows, and drafted-only metrics. No real personal data is committed to the repository.
+Personal history is not needed for draft recommendations. It supports only the separate descriptive League history workspace today.
 
-Start with one complete historical season to learn the workflow:
+Start with one complete, pseudonymized historical season outside the repository and preferably outside OneDrive:
 
-1. Download the `league-history-v1` template in Data Center.
-2. Move the working copy outside the repository and preferably outside OneDrive.
-3. Replace league, team, owner, username, and account identifiers with stable pseudonymous IDs.
-4. Fill every league rule, every original draft pick, and every team outcome for that season.
-5. Put `package.json` and the declared CSV files directly at the ZIP root.
-6. Import the ZIP in Data Center and read/download its quality report.
-7. Run `fantasy-draft data review-identities`; approve only verified public football-player IDs.
-8. Apply reviewed decisions, refresh the queue, and run `fantasy-draft features build-roster-history`.
-9. Run `fantasy-draft data audit` and inspect `/league-history`.
-10. Repeat for all accessible completed seasons without selecting only your team, champions, or memorable drafts.
+1. Download the `league-history-v1` template from **Advanced → Data center**.
+2. Fill every league rule, every original draft pick, and every team outcome.
+3. Put `package.json` and the declared CSV files directly at the ZIP root.
+4. Import the ZIP and read its quality report.
+5. Review public player identities before applying mappings.
+6. Build roster-history features and inspect **Advanced → League history**.
 
-The full field walkthrough is in [League History Import Guide](LEAGUE_HISTORY_IMPORT_GUIDE.md) and the collection checklist is in [User Data Checklist](USER_DATA_CHECKLIST.md).
+See [League History Import Guide](LEAGUE_HISTORY_IMPORT_GUIDE.md) and [User Data Checklist](USER_DATA_CHECKLIST.md).
 
-## Why outcome training remains locked
+## Outcome-model boundary
 
-One personal league can be useful for descriptive learning but is not independent representative evidence for a calibrated playoff/championship model. Phase 8 requires, at minimum, 100 analysis-ready league-seasons, 1,000 team-seasons with roster features and target evidence, five seasons, chronological validation/test coverage, 95% completeness/mapping, and balanced target classes. A nonlinear model has a higher floor.
+The existing documented minimum remains 100 analysis-ready league-seasons, 1,000 team-seasons, five seasons, chronological validation/test coverage, at least 95% completeness/mapping, and usable target balance. Those counts are necessary rather than sufficient. A future authorized modeling phase would still require leakage review, representative sampling, ruleset diversity, calibration, and cohort reliability.
 
-Those counts are necessary, not sufficient. A later authorized modeling phase would still need leakage review, representative sampling, ruleset diversity, chronological baseline comparison, calibration, and cohort reliability. Phase 8 has no outcome-training button and produces no playoff/championship probability.
+## Publication status
 
-## Quality and publication boundary
+Phase 8 PR #8 was merged to `main` at commit `f321c325e0620cb43cae48edc098c3084a040dca`. After the GitHub Actions service outage recovered, Phase 6 pull-request run `31118319345`, the Phase 7 pull-request rerun and `main` retrigger, and the Phase 8 pull-request and resulting `main` runs all received real hosted runners and completed green. On August 14, 2026, the affected Phase 6 `main` run `31119062454` was safely canceled and rerun; attempt 2 received hosted job `94857281821` and completed green in 1 minute 49 seconds with Ruff, mypy, and pytest passing. Later green descendant `main` runs also include the Phase 6 code.
 
-The current production warehouse has been migrated additively and the CLI data audit passes across eight manifests and 12 verified raw files. The focused Phase 8 integration suite covers unsafe ZIPs, privacy rejection, immutable archives, equivalent-package deduplication, canonical conflicts, identity review/reconciliation, additive migrations, partial-week fail-closed behavior, app pages, and model-gate locks. Final repository-wide and browser evidence is recorded in [the Phase 8 evaluation](PHASE_8_LEAGUE_HISTORY_EVALUATION.md).
-
-GitHub Actions hosted evidence for Phases 6 and 7 is still pending due the reported Actions outage. Phase 8 commit `d593fe4` is pushed on `codex/phase-8-league-history`, and draft PR #8 is open against `main`. No Phase 8 workflow registered while GitHub Status reported an Actions major outage. The recovery reminder should track all three milestones and report only real hosted results. PR #8 remains unmerged until green hosted CI exists unless the outage persists and a separate explicit, documented decision is made.
-
-## After Phase 8
-
-There is no Phase 9 in the current master specification. The next work should be driven by evidence from:
-
-- your human usability test;
-- reviewed ADP identity mappings and live draft rehearsals;
-- the first real pseudonymized history package and its quality report; and
-- genuine data gaps uncovered by those workflows.
-
-Likely follow-up work is usability polish, platform-specific documented import helpers, additional historical evidence coverage, and bug fixes. It is not automatic expansion into outcome modeling.
+The recommendation-first milestone passes Ruff, strict mypy across 97 source files, all 299 repository tests, the production audit across eight manifests and 12 immutable raw files, and real browser QA of quick start, user/opponent table picks, search reset, persistence, rankings, help, and undo. Its temporary browser-test draft was removed and all local-state counters returned to zero. Hosted pull-request and resulting `main` evidence remain the publication gate; GitHub Actions is the live source of truth.

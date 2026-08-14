@@ -6,7 +6,12 @@ from dataclasses import dataclass
 
 from fantasy_draft_ai.config import AppConfig, load_config
 from fantasy_draft_ai.draft.repository import DraftRepository
-from fantasy_draft_ai.recommendations.config import DraftEngineConfig, load_draft_engine_config
+from fantasy_draft_ai.recommendations.config import (
+    DraftEngineConfig,
+    ProjectionGuidanceConfig,
+    load_draft_engine_config,
+    load_projection_guidance_config,
+)
 from fantasy_draft_ai.rules.models import LeagueRules
 from fantasy_draft_ai.services.adp_market import AdpMarketBoard, load_adp_market_board
 from fantasy_draft_ai.services.draft_room import DraftRoomPreparation, prepare_draft_room
@@ -26,6 +31,7 @@ class AppContext:
     adp_market_board: AdpMarketBoard
     reference_rules: LeagueRules
     engine_config: DraftEngineConfig
+    guidance_config: ProjectionGuidanceConfig
     draft_repository: DraftRepository
     setup_repository: LeagueSetupRepository
 
@@ -55,6 +61,9 @@ def load_app_context() -> AppContext:
         ),
         engine_config=load_draft_engine_config(
             config.project_root / "configs" / "draft_engine.yaml"
+        ),
+        guidance_config=load_projection_guidance_config(
+            config.project_root / "configs" / "projection_guidance.yaml"
         ),
         draft_repository=DraftRepository(warehouse_path),
         setup_repository=LeagueSetupRepository(warehouse_path),

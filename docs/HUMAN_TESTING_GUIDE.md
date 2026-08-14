@@ -1,12 +1,12 @@
 # Human Testing Guide
 
-This guide is the hands-on walkthrough for the finished local application. It separates three different jobs that are easy to confuse:
+This guide is the hands-on walkthrough for the local redraft assistant. It separates three different jobs that are easy to confuse:
 
 1. **Use the app for a draft** with rules, projections, a persistent draft board, and descriptive post-draft reporting.
 2. **Maintain public NFL and ADP evidence** used by the player and draft-market components.
 3. **Optionally import personal league history** for roster-construction and draft-only historical descriptions.
 
-Personal league history is not required to open the app, create a league setup, or record a manual draft. It is required only for the Phase 8 historical workspace, and much more independent history would be required before a league-outcome model could be considered.
+Personal league history is not required to open the app, see player rankings, get projection-based pick advice, or run a manual draft. It is required only for the historical workspace, and much more independent history would be required before a league-outcome model could be considered.
 
 ## Start the app
 
@@ -28,52 +28,79 @@ python -m streamlit run app.py
 
 ## Restore a clean testing baseline
 
-Project Status includes a collapsed **Local testing controls** section with a **Restore app defaults** button. The confirmation dialog shows the exact saved-setup, practice-draft, and pick counts and requires the phrase `RESTORE DEFAULTS` before it can run.
+Open **Advanced → System status**. Its collapsed **Local testing controls** section includes a **Restore app defaults** button. The confirmation dialog shows the exact saved-setup, practice-draft, and pick counts and requires the phrase `RESTORE DEFAULTS` before it can run.
 
-The restore removes only saved local league setups, practice draft sessions, their picks/events, and browser-session widget state. It does **not** remove immutable raw archives, manifests, canonical players or weekly stats, ADP evidence, reviewed identity mappings, model artifacts, or imported league-history evidence. If another browser tab changes local state after the dialog opens, the transaction stops before deletion and requires a fresh confirmation. After restoration, League Setup again prefills the checked-in 12-team PPR reference rules without inserting a replacement database row.
+The restore removes only saved local league setups, practice draft sessions, their picks/events, and the current app session's widget state. It does **not** remove immutable raw archives, manifests, canonical players or weekly stats, ADP evidence, reviewed identity mappings, model artifacts, or imported league-history evidence. Other open browser tabs have separate session state and may briefly retain stale widget values until they rerun. If another browser tab changes local database state after the dialog opens, the transaction stops before deletion and requires a fresh confirmation. After restoration, League Setup again prefills the checked-in 12-team PPR reference rules without inserting a replacement database row.
 
 Download a setup YAML first if you may want to reuse custom rules. The restore cannot recover deleted practice-draft state.
 
-## What to test first
+## Your first useful draft test
 
-### 1. Project Status
+### 1. Start in Draft Assistant
 
-Confirm that the page clearly distinguishes:
+The app now opens directly to **Draft Assistant**. Expand **Start a new redraft** and use:
 
-- an available capability from a pending one;
-- a learned model from a baseline or heuristic;
-- a descriptive league-history report from an outcome model; and
-- a local passing result from hosted GitHub Actions evidence.
+- Draft name: any recognizable practice name;
+- League size: your real league size, or 12 teams for the first test; and
+- Your draft position: your slot in the snake draft.
 
-Nothing on this page should imply that playoff or championship probabilities exist.
+Quick Start keeps the checked-in **2026 full-PPR** scoring and lets you choose **Standard (2 WR, 1 FLEX)** or **WR/FLEX-heavy (3 WR, 2 FLEX)**; both use 1 QB, 2 RB, 1 TE, and 7 bench spots. It does not use a setup saved under Advanced. This is currently a no-K/DST workflow: kicker and team defense are not projected and cannot be entered as placeholder picks, so use Quick Start only for a draft that does not select those positions.
 
-Open **Local testing controls** and confirm the restore dialog explains what it removes and preserves. Cancel it during a normal walkthrough. Use the final restore only when you intentionally want a clean test run.
+The active publication contains 1,367 projection rows, including 233 live rookies that use an **unvalidated point-only heuristic fallback** because an honest historical preseason rookie-position cohort is unavailable. For those rows, `P10=P50=P90`, and risk is not estimated. They can appear in rankings and recommendations, but they do not have validated uncertainty intervals.
 
-### 2. Data Center
+Select **Start draft** for this first walkthrough. For a full-PPR QB/RB/WR/TE/FLEX/SUPERFLEX/bench roster outside those two presets, save the rules in **Advanced → League settings** and create the session in **Advanced → Technical draft room**. Half-PPR, standard, other scoring changes, a different season, and keeper formats cannot use the active projection publication.
 
-Run the read-only audit. Inspect source manifests and canonical table counts. Do not acquire new network data merely to test a button unless you intentionally want a new immutable snapshot.
+### 2. Use the recommendation when you are on the clock
 
-For the league-history workflow, download a fresh template bundle before creating a private working copy. The upload must be a ZIP that follows `league-history-v1`. A rejected file should still be archived for evidence but must not change canonical history tables.
+At your pick, the top of the page should answer three questions without another screen:
 
-### 3. Model Lab
+1. Who is the best projected pick now?
+2. Why is that player above the alternatives?
+3. Is next-pick market timing available, or is it honestly missing?
 
-Inspect the selected player-projection methods, chronological evaluation evidence, intervals, diagnostics, and model lineage. This page is read-only. It should not offer a training or model-promotion button.
+The main recommendation combines the model's season projection, value above the league-specific replacement player, the drop to the next available player at that position, and fit with your current roster. It works without ADP. In the current production build, 0 of 203 compatible QB/RB/WR/TE market identities are reviewed, so ADP and the estimated chance that a player lasts to your next turn are unavailable for every compatible player. If reviewed linkage is added later, the app may show that timing; missing timing is never displayed as zero.
 
-### 4. League Setup
+Use the main **Draft Player Name** button or any row's **Draft** button to record the pick.
 
-Create a clearly named test setup. Verify team count, roster slots, FLEX/SUPERFLEX eligibility, scoring rules, playoff settings, and your draft slot before saving. Export the YAML backup, then import it again and confirm that the fingerprint check succeeds.
+### 3. Record every league pick
 
-### 5. Draft Room
+This is a manual live tracker for the supported no-K/DST preset. **Record every QB/RB/WR/TE selection in draft order, including opponents' picks—not only your picks.** The app determines the team on the clock from snake order. Each recorded player should immediately disappear from the available table. When the draft reaches your slot again, the recommendation must recalculate from the remaining players and your roster. Do not use this workflow for a league that drafts kicker, team defense, or another unsupported position, because those selections cannot currently be recorded or skipped honestly.
 
-Create a new test session from the saved setup. Record several picks, refresh the browser, and confirm that the picks remain. Test undo and replacement, then inspect each roster and the event-replay status.
+Test this sequence:
 
-The manual state workflow can be usable even when recommendations are locked. A locked recommendation should state the exact missing evidence—such as reviewed ADP-to-player mappings—instead of returning a made-up ranking or probability.
+1. Draft the recommended player at your first pick.
+2. Record several opponent picks using search and the row button.
+3. Confirm drafted players disappear everywhere.
+4. Use **Undo last pick** and confirm the player returns.
+5. Refresh the browser and confirm the session and picks remain.
+6. Continue until your next turn and compare the changed recommendation.
 
-### 6. Post-Draft
+The app does not yet synchronize Sleeper or ESPN drafts. It also does not ingest live injury, suspension, or depth-chart news, so check a current news source before acting on a recommendation.
+
+### 4. Check Player rankings
+
+Open **Player rankings** before or during the practice draft. Change league size, search for players, and filter positions. Use a quick Top 50/100/200/300 view during normal comparison or choose **All players** when you need the complete filtered board. Overall rank should use value over replacement, not raw points across positions. That prevents a quarterback from automatically outranking every running back or receiver merely because quarterback scoring totals are larger.
+
+Confirm each row clearly shows projection, position rank, tier, floor, ceiling, and replacement value. ADP is blank for all currently compatible players because reviewed market mappings are 0/203; the projection ranking should still work. For the 233 rookie heuristic rows, floor and ceiling equal the point estimate and the risk label is **Not estimated**—that equality is a limitation, not evidence of certainty.
+
+### 5. Open Draft report
 
 Open the report before and after completing a test draft. An incomplete report should identify itself as provisional. Check positional capital, lineup or roster coverage, market-value evidence, risk labels, and missing-data limitations. Missing ADP or uncertainty must remain unavailable rather than silently becoming zero.
 
-### 7. League History
+### 6. Use Advanced only when you need it
+
+The normal draft path should not require these pages:
+
+- **League settings** retains the complete roster/scoring editor and YAML backup/restore.
+- **Technical draft room** retains frozen-board, replay, and enhanced market-simulation diagnostics.
+- **System status** shows capability gates and the protected local reset.
+- **Data center** audits source files and handles optional history packages.
+- **Model details** exposes chronological model evidence and player-level explanations.
+- **League history** handles optional personal historical data.
+
+If the core Draft Assistant forces you into one of these pages to answer “who should I pick?”, record that as a usability bug.
+
+### 7. Optional League history test
 
 Before importing personal evidence, confirm that the empty state explains:
 

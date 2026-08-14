@@ -1,0 +1,5 @@
+version: projection-baseline-v1
+scarcity_weight: 0.25
+roster_fit_weight: 25.0
+open_starter_bonus: 0.25
+lineup_improvement_weight: 0.25

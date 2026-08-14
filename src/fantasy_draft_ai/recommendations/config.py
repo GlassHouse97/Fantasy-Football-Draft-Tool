@@ -71,7 +71,38 @@ class DraftEngineConfig(BaseModel):
         return hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()
 
 
+class ProjectionGuidanceConfig(BaseModel):
+    """Versioned weights for the ADP-independent live-pick baseline."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    version: str = Field(min_length=1)
+    scarcity_weight: float = Field(ge=0, le=1)
+    roster_fit_weight: float = Field(ge=0, le=100)
+    open_starter_bonus: float = Field(ge=0, le=1)
+    lineup_improvement_weight: float = Field(ge=0, le=1)
+
+    def canonical_json(self) -> str:
+        return json.dumps(
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+
+    def fingerprint(self) -> str:
+        return hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()
+
+
 def load_draft_engine_config(path: Path | None = None) -> DraftEngineConfig:
     config_path = path or Path("configs/draft_engine.yaml")
     with config_path.open(encoding="utf-8") as handle:
         return DraftEngineConfig.model_validate(yaml.safe_load(handle))
+
+
+def load_projection_guidance_config(path: Path | None = None) -> ProjectionGuidanceConfig:
+    """Load the independently versioned projection-first recommendation weights."""
+
+    config_path = path or Path("configs/projection_guidance.yaml")
+    with config_path.open(encoding="utf-8") as handle:
+        return ProjectionGuidanceConfig.model_validate(yaml.safe_load(handle))

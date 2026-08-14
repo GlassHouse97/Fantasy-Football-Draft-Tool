@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from fantasy_draft_ai.draft.pool import FrozenDraftPlayer
 from fantasy_draft_ai.draft.state import DraftState
-from fantasy_draft_ai.models.adp.availability import normal_survival
+from fantasy_draft_ai.models.adp.availability import conditional_normal_availability
 
 RiskLabel = Literal["low", "medium", "high", "not_estimated"]
 MethodKind = Literal["learned", "transparent_baseline", "heuristic"]
@@ -93,10 +93,14 @@ def build_draft_board(
                 p10=player.p10,
                 p50=player.p50,
                 p90=player.p90,
-                average_pick=player.average_pick,
+                average_pick=(
+                    player.average_pick if player.has_mapped_market_evidence else None
+                ),
                 adp_value_at_current_pick=(
                     None
-                    if current_pick is None or player.average_pick is None
+                    if current_pick is None
+                    or not player.has_mapped_market_evidence
+                    or player.average_pick is None
                     else float(current_pick) - player.average_pick
                 ),
                 probability_gone_before_user_pick=_probability_gone(
@@ -142,26 +146,17 @@ def _probability_gone(
     if (
         current_pick is None
         or next_user_pick is None
-        or not player.has_market_evidence
+        or not player.has_mapped_market_evidence
         or player.average_pick is None
         or player.availability_scale is None
     ):
         return None
-    lower_boundary = current_pick + 0.5
-    upper_boundary = next_user_pick - 0.5
-    if upper_boundary <= lower_boundary:
-        return 0.0
-    lower_survival = normal_survival(
-        lower_boundary,
-        mean=player.average_pick,
+    if next_user_pick <= current_pick:
+        return None
+    probability_available = conditional_normal_availability(
+        average_pick=player.average_pick,
+        current_pick=float(current_pick),
+        next_pick=float(next_user_pick),
         standard_deviation=player.availability_scale,
     )
-    upper_survival = normal_survival(
-        upper_boundary,
-        mean=player.average_pick,
-        standard_deviation=player.availability_scale,
-    )
-    if lower_survival <= 0.0:
-        return 1.0
-    probability_available = min(1.0, max(0.0, upper_survival / lower_survival))
     return 1.0 - probability_available

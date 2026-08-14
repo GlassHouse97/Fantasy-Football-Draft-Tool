@@ -21,7 +21,6 @@ ALGORITHM_VERSION = "phase6-monte-carlo-v1"
 _NORMAL_90_Z = 1.2815515655446004
 _SQRT_TWO = math.sqrt(2.0)
 _LOG_SQRT_TWO_PI = 0.5 * math.log(2.0 * math.pi)
-_MAPPED_CONFIDENCE = frozenset({"exact", "high", "reviewed"})
 
 PickActor = Literal["candidate", "opponent", "user_policy"]
 
@@ -678,24 +677,7 @@ def _normal_log_survival(z_value: float) -> float:
 
 
 def _has_mapped_market_evidence(player: FrozenDraftPlayer) -> bool:
-    confidence = (player.mapping_confidence or "").strip().casefold()
-    captured_at = player.market_captured_at
-    return (
-        player.has_market_evidence
-        and confidence in _MAPPED_CONFIDENCE
-        and bool((player.market_source or "").strip())
-        and bool((player.market_snapshot_id or "").strip())
-        and bool((player.availability_evidence or "").strip())
-        and captured_at is not None
-        and captured_at.tzinfo is not None
-        and captured_at.utcoffset() is not None
-        and player.average_pick is not None
-        and math.isfinite(player.average_pick)
-        and player.average_pick >= 1.0
-        and player.availability_scale is not None
-        and math.isfinite(player.availability_scale)
-        and player.availability_scale > 0.0
-    )
+    return player.has_mapped_market_evidence
 
 
 def _has_market_universe_evidence(player: FrozenDraftPlayer) -> bool:
