@@ -26,6 +26,19 @@ If the command is not recognized, use the module entry point from the activated 
 python -m streamlit run app.py
 ```
 
+## What the Draft Night interface should look like
+
+The current local interface uses Streamlit's native dark theme with Inter body text and Barlow Condensed headings. It should feel like one draft product rather than a set of equal-looking technical panels:
+
+- turn status is a compact card with overall pick, round, team on the clock, and undo;
+- the main recommendation is visually dominant, with smaller strong alternatives and a compact roster card beside it;
+- QB, RB, WR, and TE use consistent position colors in cards, tables, rosters, and draft activity;
+- the available-player table pins the action, rank, and player columns while trimming the live view to the most useful fields;
+- Player rankings pins rank and player while retaining the fuller projection, tier, floor, ceiling, and VORP comparison; and
+- detailed projection, ADP, and live-news limitations remain available in badges and expandable data notes, but no longer crowd the primary pick workflow.
+
+These are visual acceptance targets for local human testing, not a claim of mobile or cross-browser certification.
+
 ## Restore a clean testing baseline
 
 Open **Advanced → System status**. Its collapsed **Local testing controls** section includes a **Restore app defaults** button. The confirmation dialog shows the exact saved-setup, practice-draft, and pick counts and requires the phrase `RESTORE DEFAULTS` before it can run.
@@ -58,30 +71,32 @@ At your pick, the top of the page should answer three questions without another 
 2. Why is that player above the alternatives?
 3. Is next-pick market timing available, or is it honestly missing?
 
-The main recommendation combines the model's season projection, value above the league-specific replacement player, the drop to the next available player at that position, and fit with your current roster. It works without ADP. In the current production build, 0 of 203 compatible QB/RB/WR/TE market identities are reviewed, so ADP and the estimated chance that a player lasts to your next turn are unavailable for every compatible player. If reviewed linkage is added later, the app may show that timing; missing timing is never displayed as zero.
+The main recommendation combines the model's season projection, value above the league-specific replacement player, the drop to the next available player at that position, and fit with your current roster. It works without ADP. Its bordered card should be the clearest element on your turn, followed by the smaller strong-alternative cards and your position-colored roster summary. In the current production build, 0 of 203 compatible QB/RB/WR/TE market identities are reviewed, so ADP and the estimated chance that a player lasts to your next turn are unavailable for every compatible player. If reviewed linkage is added later, the app may show that timing; missing timing is never displayed as zero.
 
-Use the main **Draft Player Name** button or any row's **Draft** button to record the pick.
+Use the main **Draft Player Name** button or **Record my pick** in the available-player table to record your selection.
 
 ### 3. Record every league pick
 
-This is a manual live tracker for the supported no-K/DST preset. **Record every QB/RB/WR/TE selection in draft order, including opponents' picks—not only your picks.** The app determines the team on the clock from snake order. Each recorded player should immediately disappear from the available table. When the draft reaches your slot again, the recommendation must recalculate from the remaining players and your roster. Do not use this workflow for a league that drafts kicker, team defense, or another unsupported position, because those selections cannot currently be recorded or skipped honestly.
+This is a manual live tracker for the supported no-K/DST preset. **Record every QB/RB/WR/TE selection in draft order, including opponents' picks—not only your picks.** The app determines the team on the clock from snake order. On an opponent's turn, the available-player board should appear before your roster and its row action should read **Record taken**. On your turn, the recommendation and roster should appear first and the row action should read **Record my pick**. Each recorded player should immediately disappear from the available table. When the draft reaches your slot again, the recommendation must recalculate from the remaining players and your roster. Do not use this workflow for a league that drafts kicker, team defense, or another unsupported position, because those selections cannot currently be recorded or skipped honestly.
 
 Test this sequence:
 
 1. Draft the recommended player at your first pick.
-2. Record several opponent picks using search and the row button.
+2. Record several opponent picks using search and **Record taken**.
 3. Confirm drafted players disappear everywhere.
 4. Use **Undo last pick** and confirm the player returns.
 5. Refresh the browser and confirm the session and picks remain.
 6. Continue until your next turn and compare the changed recommendation.
+7. Under **Draft activity**, confirm **Draft board** is the default view: rounds are rows, draft slots are columns, positions are color-coded, your team column is highlighted, and the current cell says **YOUR PICK** or **ON THE CLOCK**.
+8. Switch to **Pick log** and confirm the same selections appear in reverse chronological order.
 
 The app does not yet synchronize Sleeper or ESPN drafts. It also does not ingest live injury, suspension, or depth-chart news, so check a current news source before acting on a recommendation.
 
 ### 4. Check Player rankings
 
-Open **Player rankings** before or during the practice draft. Change league size, search for players, and filter positions. Use a quick Top 50/100/200/300 view during normal comparison or choose **All players** when you need the complete filtered board. Overall rank should use value over replacement, not raw points across positions. That prevents a quarterback from automatically outranking every running back or receiver merely because quarterback scoring totals are larger.
+Open **Player rankings** before or during the practice draft. Change league size, search for players, and filter positions with the compact controls. Use a quick Top 50/100/200/300 view during normal comparison or choose **All players** when you need the complete filtered board. Overall rank should use value over replacement, not raw points across positions. That prevents a quarterback from automatically outranking every running back or receiver merely because quarterback scoring totals are larger.
 
-Confirm each row clearly shows projection, position rank, tier, floor, ceiling, and replacement value. ADP is blank for all currently compatible players because reviewed market mappings are 0/203; the projection ranking should still work. For the 233 rookie heuristic rows, floor and ceiling equal the point estimate and the risk label is **Not estimated**—that equality is a limitation, not evidence of certainty.
+Confirm rank and player remain pinned as you scroll horizontally, position cells use the same colors as Draft Assistant, and each row clearly shows projection, position rank, tier, floor, ceiling, and replacement value. The ADP column is hidden because reviewed market mappings are 0/203; the projection ranking should still work. For the 233 rookie heuristic rows, floor and ceiling equal the point estimate and the risk label is **Not estimated**—that equality is a limitation, not evidence of certainty. Open **Data and confidence notes** to confirm those honest warnings remain available without dominating the board.
 
 ### 5. Open Draft report
 

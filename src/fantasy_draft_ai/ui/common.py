@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, Literal, TypeAlias
 
 import duckdb
 import pandas as pd
@@ -15,13 +15,93 @@ from fantasy_draft_ai.services.league_setup import (
 )
 from fantasy_draft_ai.ui.context import AppContext
 
+BadgeColor: TypeAlias = Literal[
+    "red",
+    "orange",
+    "yellow",
+    "blue",
+    "green",
+    "violet",
+    "gray",
+    "grey",
+    "primary",
+]
+
+_POSITION_BADGE_COLORS: dict[str, BadgeColor] = {
+    "QB": "blue",
+    "RB": "green",
+    "WR": "violet",
+    "TE": "orange",
+    "K": "gray",
+    "DST": "red",
+    "DEF": "red",
+}
+
+_POSITION_CELL_STYLES = {
+    "QB": "background-color: #1D4ED8; color: #F8FAFC; font-weight: 700;",
+    "RB": "background-color: #15803D; color: #F8FAFC; font-weight: 700;",
+    "WR": "background-color: #6D28D9; color: #F8FAFC; font-weight: 700;",
+    "TE": "background-color: #C2410C; color: #F8FAFC; font-weight: 700;",
+    "K": "background-color: #475569; color: #F8FAFC; font-weight: 700;",
+    "DST": "background-color: #BE123C; color: #F8FAFC; font-weight: 700;",
+    "DEF": "background-color: #BE123C; color: #F8FAFC; font-weight: 700;",
+}
+
+_POSITION_MARKDOWN_COLORS = {
+    "QB": "blue",
+    "RB": "green",
+    "WR": "violet",
+    "TE": "orange",
+    "K": "gray",
+    "DST": "red",
+    "DEF": "red",
+}
+
 
 def render_page_header(title: str, eyebrow: str, description: str) -> None:
     """Render the consistent local-app page heading."""
 
-    st.caption(eyebrow.upper())
-    st.title(title)
-    st.write(description)
+    with st.container(border=True, gap="xsmall"):
+        st.badge(eyebrow, color="blue")
+        st.title(title)
+        st.caption(description)
+
+
+def render_section_header(
+    title: str,
+    description: str | None = None,
+    *,
+    icon: str | None = None,
+) -> None:
+    """Introduce one product section with a compact, repeatable hierarchy."""
+
+    label = title if icon is None else f"{icon} {title}"
+    st.header(label)
+    if description:
+        st.caption(description)
+
+
+def render_position_badge(position: str, label: str | None = None) -> None:
+    """Render one position using the shared draft-night color language."""
+
+    normalized = position.strip().upper()
+    color = _POSITION_BADGE_COLORS.get(normalized, "gray")
+    st.badge(label or normalized, color=color)
+
+
+def position_cell_style(position: object) -> str:
+    """Return a readable dataframe cell style for a fantasy position."""
+
+    normalized = str(position).strip().upper()
+    return _POSITION_CELL_STYLES.get(normalized, "")
+
+
+def position_option_label(position: object) -> str:
+    """Format position filter options with readable semantic text colors."""
+
+    normalized = str(position).strip().upper()
+    color = _POSITION_MARKDOWN_COLORS.get(normalized, "gray")
+    return f":{color}[**{normalized}**]"
 
 
 def render_method_legend() -> None:
