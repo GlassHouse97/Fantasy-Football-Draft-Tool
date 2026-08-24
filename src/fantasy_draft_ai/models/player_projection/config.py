@@ -7,8 +7,8 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any, Final, Literal
 
-PLAYER_MODEL_VERSION: Final = "phase4-player-models-v2"
-FEATURE_CONTRACT_VERSION: Final = "phase4-player-features-v1"
+PLAYER_MODEL_VERSION: Final = "phase4-player-models-v3"
+FEATURE_CONTRACT_VERSION: Final = "phase4-player-features-v2"
 
 RIDGE: Final = "ridge"
 HIST_GRADIENT_BOOSTING: Final = "hist_gradient_boosting"
@@ -30,7 +30,6 @@ DEFAULT_TARGETS: Final = (
 DEFAULT_NUMERIC_FEATURES: Final = (
     "prediction_season",
     "age_at_cutoff",
-    "age_adjustment_factor",
     "draft_pick",
     "draft_round",
     "height_inches",
@@ -65,6 +64,12 @@ DEFAULT_NUMERIC_FEATURES: Final = (
     "weighted_3yr_fumbles_lost_per_game",
 )
 DEFAULT_CATEGORICAL_FEATURES: Final = ("previous_team",)
+DEFAULT_DRAFT_RELEVANCE_TOP_N: Final = (
+    ("QB", 12),
+    ("RB", 24),
+    ("WR", 36),
+    ("TE", 12),
+)
 
 _BLOCKED_METADATA_FEATURES: Final = frozenset(
     {
@@ -126,6 +131,42 @@ DEFAULT_HGB_GRID: Final = (
 
 
 @dataclass(frozen=True)
+class DraftRelevancePolicy:
+    """Cutoff-safe model-selection policy for a conventional 12-team draft pool."""
+
+    anchor_baseline: str = "weighted_components"
+    top_n_by_position: tuple[tuple[str, int], ...] = DEFAULT_DRAFT_RELEVANCE_TOP_N
+    pooled_mae_regression_tolerance: float = 0.05
+    max_total_top_n_capture_regression: float = 0.05
+
+    def __post_init__(self) -> None:
+        if not self.anchor_baseline.strip():
+            raise ValueError("The draft-relevance anchor baseline cannot be blank.")
+        positions = [position for position, _ in self.top_n_by_position]
+        if len(set(positions)) != len(positions) or not positions:
+            raise ValueError("Draft-relevance positions must be non-empty and unique.")
+        if any(position not in DEFAULT_POSITIONS for position in positions):
+            raise ValueError("Draft relevance supports only QB, RB, WR, and TE.")
+        if any(top_n < 1 for _, top_n in self.top_n_by_position):
+            raise ValueError("Every draft-relevance top-N value must be positive.")
+        if not 0.0 <= self.pooled_mae_regression_tolerance <= 1.0:
+            raise ValueError("The pooled-MAE regression tolerance must be within [0, 1].")
+        if not 0.0 <= self.max_total_top_n_capture_regression <= 1.0:
+            raise ValueError("The top-N capture regression tolerance must be within [0, 1].")
+
+    def top_n_for(self, position: str) -> int:
+        """Return the fixed draft-relevant cohort size for one position."""
+
+        normalized = position.strip().upper()
+        try:
+            return dict(self.top_n_by_position)[normalized]
+        except KeyError as exc:
+            raise ValueError(
+                f"No draft-relevance top-N value is configured for {normalized or position!r}."
+            ) from exc
+
+
+@dataclass(frozen=True)
 class PlayerModelConfig:
     """Versioned training behavior included in every model-run fingerprint."""
 
@@ -143,6 +184,7 @@ class PlayerModelConfig:
     games_active_bounds: tuple[float, float] = (0.0, 18.0)
     learned_operational_center: str = "training_only_residual_adjusted_p50"
     baseline_operational_center: str = "phase3_transparent_point"
+    draft_relevance_policy: DraftRelevancePolicy = DraftRelevancePolicy()
 
     def __post_init__(self) -> None:
         if not self.version.strip():
@@ -171,8 +213,21 @@ class PlayerModelConfig:
             raise ValueError(f"Unsafe or metadata model features are forbidden: {unsafe}.")
         if "prediction_season" not in self.numeric_features:
             raise ValueError("prediction_season must remain an explicit model feature.")
+        if {"age_at_cutoff", "age_adjustment_factor"}.issubset(self.numeric_features):
+            raise ValueError(
+                "Learned models cannot include both raw age and the derived age adjustment."
+            )
         if "previous_team" not in self.categorical_features:
             raise ValueError("previous_team must remain an explicit categorical feature.")
+        configured_relevance_positions = {
+            position for position, _ in self.draft_relevance_policy.top_n_by_position
+        }
+        missing_relevance_positions = sorted(set(self.positions) - configured_relevance_positions)
+        if missing_relevance_positions:
+            raise ValueError(
+                "Draft relevance has no top-N value for positions: "
+                f"{missing_relevance_positions}."
+            )
         if not self.ridge_alphas or any(alpha <= 0 for alpha in self.ridge_alphas):
             raise ValueError("Every Ridge alpha must be positive.")
         if not self.hgb_grid:

@@ -228,6 +228,64 @@ def _decide_nflverse_conflict(worksheet_path: Path, override_path: Path) -> None
     frame.to_csv(override_path, index=False)
 
 
+def _archive_platform_capture(
+    config: AppConfig,
+    source: str,
+    rows: list[dict[str, Any]],
+    *,
+    acquired_at: datetime,
+) -> None:
+    archive = RawArchive(
+        config.project_root,
+        config.resolve(config.paths.raw_dir),
+        config.resolve(config.paths.manifests),
+    )
+    if source == "sleeper":
+        content = (json.dumps(rows, sort_keys=True) + "\n").encode()
+        extension = ".json"
+    else:
+        content = pd.DataFrame(rows).to_csv(index=False).encode()
+        extension = ".csv"
+    raw_path, captured_at = archive.write_bytes(
+        f"{source}_adp",
+        f"{source}_adp__2026",
+        extension,
+        content,
+        acquired_at=acquired_at,
+    )
+    archive.create_manifest(
+        source=source,
+        acquisition_method="integration-test",
+        acquired_at=captured_at,
+        raw_files=[raw_path],
+        seasons=[2026],
+    )
+
+
+def _archive_ff_playerids(
+    config: AppConfig,
+    rows: list[dict[str, Any]],
+    *,
+    acquired_at: datetime,
+) -> None:
+    raw_dir = config.resolve(config.paths.raw_dir) / "nflverse"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    stamp = acquired_at.strftime("%Y%m%dT%H%M%S%fZ")
+    raw_path = raw_dir / f"nflverse_ff_playerids__{stamp}.parquet"
+    pd.DataFrame(rows).to_parquet(raw_path, index=False)
+    archive = RawArchive(
+        config.project_root,
+        config.resolve(config.paths.raw_dir),
+        config.resolve(config.paths.manifests),
+    )
+    archive.create_manifest(
+        source="nflverse_ff_playerids",
+        acquisition_method="integration-test",
+        acquired_at=acquired_at,
+        raw_files=[raw_path],
+    )
+
+
 def test_refresh_classifies_real_style_identity_evidence_idempotently(tmp_path: Path) -> None:
     config = _config(tmp_path)
     _scenario(config)
@@ -851,3 +909,265 @@ def test_stale_and_excluded_reviews_cannot_be_mapped(tmp_path: Path) -> None:
             "SELECT count(*) FROM player_source_mappings"
         ).fetchone()
     assert mapping_count == (0,)
+
+
+def test_platform_captures_use_exact_ids_and_reviews_update_historical_adp(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    _scenario(config)
+    _archive_ff_playerids(
+        config,
+        [
+            {
+                "gsis_id": "p-unique",
+                "espn_id": "espn-p-unique",
+                "sleeper_id": "sleeper-exact",
+                "yahoo_id": "yahoo-exact",
+            },
+            {
+                "gsis_id": "p-suffix",
+                "espn_id": "espn-p-suffix",
+                "sleeper_id": None,
+                "yahoo_id": None,
+            },
+            {
+                "gsis_id": "p-unique",
+                "espn_id": "2582138",
+                "sleeper_id": None,
+                "yahoo_id": None,
+            },
+            {
+                "gsis_id": "p-suffix",
+                "espn_id": "2582138",
+                "sleeper_id": None,
+                "yahoo_id": None,
+            },
+        ],
+        acquired_at=ACQUIRED_AT + timedelta(minutes=2),
+    )
+    _archive_platform_capture(
+        config,
+        "sleeper",
+        [
+            {
+                "player_id": "sleeper-exact",
+                "player": {
+                    "first_name": "Wrong",
+                    "last_name": "Display Name",
+                    "position": "WR",
+                    "team": "BUF",
+                },
+                "stats": {"adp_ppr": 10.5},
+            },
+            {
+                "player_id": "sleeper-review",
+                "player": {
+                    "first_name": "Jose",
+                    "last_name": "Nunez",
+                    "position": "RB",
+                    "team": "MIA",
+                },
+                "stats": {"adp_ppr": 28.0},
+            },
+        ],
+        acquired_at=ACQUIRED_AT + timedelta(minutes=3),
+    )
+    common = {
+        "captured_at": "2026-08-05T13:24:34Z",
+        "season": 2026,
+        "scoring_format": "ppr",
+        "team_count": 12,
+        "position": "WR",
+        "nfl_team": "BUF",
+        "average_pick": 12.5,
+        "rank": 12,
+    }
+    _archive_platform_capture(
+        config,
+        "espn",
+        [
+            {
+                **common,
+                "source": "espn",
+                "source_player_id": "espn-p-unique",
+                "player_name": "Unique Receiver",
+            }
+        ],
+        acquired_at=ACQUIRED_AT + timedelta(minutes=4),
+    )
+    _archive_platform_capture(
+        config,
+        "yahoo",
+        [
+            {
+                **common,
+                "source": "yahoo",
+                "source_player_id": "yahoo-exact",
+                "player_name": "Unique Receiver",
+            }
+        ],
+        acquired_at=ACQUIRED_AT + timedelta(minutes=5),
+    )
+    _archive_platform_capture(
+        config,
+        "underdog",
+        [
+            {
+                **common,
+                "source": "underdog",
+                "source_player_id": "underdog-review",
+                "player_name": "Unique Receiver",
+            }
+        ],
+        acquired_at=ACQUIRED_AT + timedelta(minutes=6),
+    )
+    warehouse = Warehouse(config.resolve(config.paths.warehouse))
+    with warehouse.connect() as connection:
+        connection.executemany(
+            """
+            INSERT INTO adp_snapshots (
+                snapshot_id, source, captured_at, season, scoring_format, team_count,
+                player_id, player_name, position, nfl_team, average_pick, rank,
+                raw_source_row_id, mapping_confidence
+            ) VALUES (?, 'sleeper', ?, 2026, 'ppr', 12, NULL, 'Jose Nunez', 'RB',
+                      'MIA', 28.0, 28, 'sleeper-review', 'unresolved')
+            """,
+            [
+                ("sleeper-history-a", ACQUIRED_AT),
+                ("sleeper-history-b", ACQUIRED_AT + timedelta(minutes=1)),
+            ],
+        )
+
+    review = refresh_identity_review_queue(config)
+
+    assert review.committed
+    with warehouse.connect(read_only=True) as connection:
+        platform_rows = {
+            (str(row[0]), str(row[1])): row[2:]
+            for row in connection.execute(
+                """
+                SELECT source, source_player_id, candidate_player_id,
+                       mapping_confidence, status, reason
+                FROM identity_review_queue
+                WHERE source IN ('espn', 'sleeper', 'yahoo', 'underdog') AND is_current
+                ORDER BY source, source_player_id
+                """
+            ).fetchall()
+        }
+    assert platform_rows[("espn", "espn-p-unique")] == (
+        "p-unique",
+        "exact",
+        "resolved",
+        "exact_platform_id",
+    )
+    assert platform_rows[("sleeper", "sleeper-exact")] == (
+        "p-unique",
+        "exact",
+        "resolved",
+        "exact_platform_id",
+    )
+    assert platform_rows[("yahoo", "yahoo-exact")] == (
+        "p-unique",
+        "exact",
+        "resolved",
+        "exact_platform_id",
+    )
+    assert platform_rows[("sleeper", "sleeper-review")] == (
+        "p-suffix",
+        "medium",
+        "pending",
+        "suffix_name_position_team_candidate",
+    )
+    assert platform_rows[("underdog", "underdog-review")][0:3] == (
+        "p-unique",
+        "high",
+        "pending",
+    )
+
+    assert review.output_path is not None
+    frame = pd.read_csv(review.output_path, dtype="string", keep_default_na=False)
+    selected = (frame["source"] == "sleeper") & (
+        frame["source_player_id"] == "sleeper-review"
+    )
+    frame = frame.loc[selected].copy()
+    frame.loc[:, "resolution"] = "confirmed"
+    frame.loc[:, "player_id"] = "p-suffix"
+    frame.loc[:, "reviewed_at"] = REVIEWED_AT
+    frame.loc[:, "reviewer"] = "integration-test"
+    frame.loc[:, "notes"] = "Confirmed against the platform profile."
+    override_path = tmp_path / "reviewed_sleeper_mapping.csv"
+    frame.to_csv(override_path, index=False)
+
+    applied = apply_identity_overrides(config, override_path)
+
+    assert applied.committed and applied.applied_rows == 1
+    with warehouse.connect(read_only=True) as connection:
+        historical_rows = connection.execute(
+            """
+            SELECT snapshot_id, player_id, mapping_confidence
+            FROM adp_snapshots
+            WHERE source = 'sleeper' AND raw_source_row_id = 'sleeper-review'
+            ORDER BY snapshot_id
+            """
+        ).fetchall()
+        sleeper_id = connection.execute(
+            "SELECT sleeper_id FROM players WHERE player_id = 'p-suffix'"
+        ).fetchone()
+    assert historical_rows == [
+        ("sleeper-history-a", "p-suffix", "reviewed"),
+        ("sleeper-history-b", "p-suffix", "reviewed"),
+    ]
+    assert sleeper_id == ("sleeper-review",)
+
+
+def test_crosswalk_platform_id_collision_fails_closed(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    _scenario(config)
+    _archive_ff_playerids(
+        config,
+        [
+            {
+                "gsis_id": "p-unique",
+                "espn_id": "espn-p-unique",
+                "sleeper_id": "shared-sleeper-id",
+                "yahoo_id": None,
+            },
+            {
+                "gsis_id": "p-suffix",
+                "espn_id": "espn-p-suffix",
+                "sleeper_id": "shared-sleeper-id",
+                "yahoo_id": None,
+            },
+        ],
+        acquired_at=ACQUIRED_AT + timedelta(minutes=2),
+    )
+    _archive_platform_capture(
+        config,
+        "sleeper",
+        [
+            {
+                "player_id": "shared-sleeper-id",
+                "player": {
+                    "first_name": "Unique",
+                    "last_name": "Receiver",
+                    "position": "WR",
+                    "team": "BUF",
+                },
+                "stats": {"adp_ppr": 10.0},
+            }
+        ],
+        acquired_at=ACQUIRED_AT + timedelta(minutes=3),
+    )
+
+    result = refresh_identity_review_queue(config)
+
+    assert not result.committed
+    assert result.quality.has_fatal_errors
+    assert any(
+        issue.code == "platform_identity_collision" for issue in result.quality.issues
+    )
+    warehouse = Warehouse(config.resolve(config.paths.warehouse))
+    with warehouse.connect(read_only=True) as connection:
+        queue_count = connection.execute("SELECT count(*) FROM identity_review_queue").fetchone()
+    assert queue_count == (0,)

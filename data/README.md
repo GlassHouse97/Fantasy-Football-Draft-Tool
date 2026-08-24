@@ -1,6 +1,6 @@
 # Local data layout
 
-- `raw/`: immutable downloads and manual uploads, including nflverse weekly/player data, nflverse/PFR snap counts, dated FFC/ESPN ADP captures, and reviewed identity worksheets under `raw/identity_overrides/`. Ignored by Git except placeholders.
+- `raw/`: immutable downloads and manual uploads, including nflverse weekly/player data, nflverse/PFR snap counts, nflverse platform-ID crosswalks, dated FFC/Sleeper captures, exact user-supplied FantasyPros Overall ADP CSV bytes and their derived Yahoo/Sleeper/RTSports/FantasyPros snapshot evidence, and reviewed identity worksheets under `raw/identity_overrides/`. Ignored by Git except placeholders.
 - `interim/`: temporary reproducible transforms.
 - `processed/`: reproducible derived files, including the editable identity-review worksheet under `processed/identity/`.
 - `warehouse/`: the local DuckDB database, including identity, participation, feature, target, baseline-evaluation, Phase 4 model-publication, and Phase 5 ADP-market tables.
@@ -57,7 +57,42 @@ The six `player_projection_*` tables hold the active run, model registrations, c
 
 ## Phase 5 ADP market data
 
-`fantasy-draft data load-adp` discovers archived FFC and manual ESPN manifests, verifies raw SHA-256 hashes, collapses duplicate manifests for the same immutable payload, and normalizes production snapshots transactionally. Clearly labeled synthetic fixtures are skipped unless `--include-synthetic` is explicitly supplied. An optional `--manifest PATH` limits a load to one capture. Repeating identical inputs preserves snapshot and observation counts.
+`fantasy-draft data load-adp` discovers archived FFC, Sleeper, and authorized manual aggregate
+manifests, including Yahoo/Sleeper/RTSports/FantasyPros snapshots derived from an accepted
+FantasyPros export. It verifies raw SHA-256 hashes, collapses duplicate manifests for the same
+immutable payload, and normalizes production snapshots transactionally. Clearly labeled
+synthetic fixtures are skipped unless `--include-synthetic` is explicitly supplied. An optional
+`--manifest PATH` limits a load to one capture. Repeating identical inputs preserves snapshot and
+observation counts.
+
+The source-specific acquisition commands remain deliberately separate from Streamlit:
+
+```powershell
+fantasy-draft data snapshot-platform-player-ids
+fantasy-draft data snapshot-sleeper-adp --season 2026
+fantasy-draft data load-adp
+```
+
+The first command archives nflverse's platform-ID crosswalk. The second stores the exact Sleeper
+response bytes with an acquisition timestamp and manifest. Neither command supplies the
+FantasyPros aggregate export.
+
+The supported human workflow is **Player Evaluation → Player Export List**, where one upload panel
+appears at the bottom of the page. Sign in to FantasyPros in a normal browser, manually download the
+**Overall ADP** CSV, and upload that untouched file. The importer requires `Rank`, `Player (Bye)`,
+`POS`, `Yahoo`, `Sleeper`, `RTSports`, and `AVG`; FantasyPros may also include `Real-Time`, which is
+retained in the original archive but ignored by normalization. It does not offer a platform selector
+or arbitrary column mapping: the required columns define the versioned contract.
+
+Selecting a structurally valid CSV automatically preserves the exact original bytes and writes four
+immutable overall snapshots:
+`yahoo`, `sleeper`, `rtsports`, and `fantasypros`. The `fantasypros` observation comes directly from
+`AVG` and is displayed as the FantasyPros composite; it is not silently recalculated. Identical
+normalized duplicates may collapse, conflicting values fail closed, and ambiguous identities stay
+unresolved. There is no separate preview or confirmation action, so select only the complete export
+you intend to load. The application never stores FantasyPros credentials or cookies and never
+automates FantasyPros login or export acquisition. Re-selecting the identical imported file reuses
+the verified immutable archive instead of duplicating it.
 
 The warehouse separates raw market evidence from derived behavior:
 
@@ -75,6 +110,12 @@ fantasy-draft data load-adp
 fantasy-draft models build-adp-baselines --availability-config configs/adp_availability.yaml --output docs/PHASE_5_ADP_AVAILABILITY_EVALUATION.md
 ```
 
-The validated build fingerprint is `3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b`, and its snapshot-data fingerprint is `44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2`. One production FFC capture produced 246 canonical observations, 246 movement features, 738 forecast rows, and 246 availability parameters. The duplicate manifest was collapsed and the synthetic ESPN fixture skipped. All 246 source identities remain unresolved and are not name-joined.
+The deterministic rebuild contains six production snapshots, 2,795 observations, 2,795 movement
+features, 8,385 forecast rows, and 2,795 availability parameters. The four FantasyPros-derived
+snapshots contain Yahoo 222 rows (185 mapped / 37 unresolved), Sleeper 302 (244 / 58), RTSports 328
+(280 / 48), and FantasyPros composite 370 (299 / 71). The synthetic ESPN fixture is skipped.
 
-Persistence is ready for all observations. Linear and exponentially weighted methods remain unavailable because they require at least three dated observations per source player. All availability scales came from source standard deviation, with zero configured fallbacks. The distribution is uncalibrated because no linked real-draft outcomes exist, and no supervised model, draft recommendation, or simulation is stored by Phase 5.
+The distribution remains uncalibrated because no linked real-draft outcomes exist, and no
+supervised model, draft recommendation, or simulation is stored by Phase 5. The post-rebuild audit
+passes across 15 manifests and 19 verified immutable files. See
+`docs/ADP_MARKET_QUALITY_REPORT_2026-08-24.md` for capture and identity coverage.

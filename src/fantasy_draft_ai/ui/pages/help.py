@@ -27,8 +27,8 @@ def render() -> None:
             st.caption("Choose your league size, draft position, and a recognizable name.")
         with st.container(border=True, width=310, height="stretch"):
             st.badge("Step 2", icon=":material/list_alt:", color="violet")
-            st.subheader("Track every pick")
-            st.caption("Record each QB, RB, WR, and TE selection in exact draft order.")
+            st.subheader("Track or simulate picks")
+            st.caption("Record real selections, or simulate opponents in a practice draft.")
         with st.container(border=True, width=310, height="stretch"):
             st.badge("Step 3", icon=":material/auto_awesome:", color="green")
             st.subheader("Use Best pick now")
@@ -45,16 +45,18 @@ def render() -> None:
         2. Search the available-player table or use its position filters.
         3. Select **Record my pick** or **Record taken** on the player who was selected.
         4. The player disappears and the snake draft advances automatically.
-        5. At your turn, use the main recommendation or one of its alternatives.
-        6. If you enter the wrong player, select **Undo last pick** immediately.
+        5. In a practice draft, select **Sim to my pick** to auto-draft opponents until your turn.
+        6. At your turn, use the main recommendation or one of its alternatives.
+        7. If you enter the wrong player, select **Undo last pick** immediately.
         """
     )
     with st.container(border=True):
-        st.badge("Manual tracking", icon=":material/touch_app:", color="blue")
+        st.badge("Live versus practice", icon=":material/touch_app:", color="blue")
         st.write(
-            "The app does not yet sync a live Sleeper or ESPN room. Record every supported "
-            "opponent pick so the available-player board stays accurate. Quick Start cannot "
-            "record K/DST selections."
+            "For a real draft, record every supported opponent selection so the available-player "
+            "board matches the room. For practice, **Sim to my pick** makes deterministic, "
+            "roster-aware opponent selections from the frozen projections. The app does not yet "
+            "sync a live Sleeper or ESPN room, and Quick Start cannot record K/DST selections."
         )
 
     render_section_header(
@@ -128,7 +130,8 @@ def render() -> None:
         st.write(
             "A recommendation is only correct for the players still available. Recording each "
             "league pick also lets the app follow snake order and know exactly when your team is "
-            "on the clock."
+            "on the clock. During a practice draft, **Sim to my pick** can do this automatically; "
+            "during a real draft, enter the actual selections instead."
         )
     with st.expander("Where did all the technical pages go?", icon=":material/help:"):
         st.write(

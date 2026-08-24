@@ -1,5 +1,35 @@
 # Next Steps
 
+## Active pivot: Player Evaluation
+
+The next product direction is a player-reference workspace alongside the existing draft tool.
+**Player Evaluation** now contains:
+
+- **Player Export List** — a simple, downloadable current-player table ordered by FantasyPros
+  consensus rank, with Yahoo, Sleeper, RTSports, the FantasyPros composite, an explicitly
+  experimental health-neutral model rank, a market/model rank delta, and one exact FantasyPros
+  Overall ADP CSV upload at the bottom of the page; missing ranks remain blank; and
+- **Player Market Consensus** — an evidence-gated player lookup registered to begin with Fantasy
+  Football Advice's 2026 YouTube videos. It intentionally shows no opinion until the video and
+  transcript corpus is acquired and validated.
+
+The August 24 FantasyPros Overall ADP export is now loaded. The exact original file was captured at
+2026-08-24 18:25:05 UTC with SHA-256
+`9402d970666b6677aba3368fd69d6d8adecba360c8f55bce7dc44e2e7464a52d`. It produced immutable Yahoo,
+Sleeper, RTSports, and FantasyPros overall snapshots; re-selecting the identical file reused the
+existing verified archive.
+
+The source-of-truth workflow is exact and automatic. At the bottom of **Player Export List**, select
+one complete manually downloaded FantasyPros CSV containing `Rank`, `Player (Bye)`, `POS`, `Yahoo`,
+`Sleeper`, `RTSports`, and `AVG`; an optional `Real-Time` column is ignored. File selection immediately
+validates, archives, loads, and refreshes the table; there is no preview or confirmation action. The
+verified board contains 1,368 players,
+276 with market data, 927 platform observations, and 165 complete comparisons. The next product
+milestone remains the YouTube inventory, transcript coverage report, alias-aware mention index, and
+reviewed player/creator consensus. See
+[Player Evaluation Milestones](PLAYER_EVALUATION_PLAN.md) and the
+[ADP quality report](ADP_MARKET_QUALITY_REPORT_2026-08-24.md).
+
 ## Current product milestone
 
 Phases 0 through 8 from the master specification are complete. The active follow-up milestone refocuses the technical foundation into the product the user originally requested: a redraft assistant that answers **who should I pick now?** from the players still available.
@@ -8,7 +38,7 @@ The main workflow is now:
 
 1. Open **Draft Assistant**.
 2. Choose a built-in roster preset, league size, and draft position for supported 2026 full-PPR, no-K/DST play.
-3. Record every supported QB/RB/WR/TE pick in order, including opponents' selections.
+3. Record every supported QB/RB/WR/TE pick in a real room, or use **Sim to my pick** during practice.
 4. When your team is on the clock, use **Best pick now** and compare its alternatives.
 5. Check **Player rankings** for the searchable league-adjusted board; choose a quick top-N view or **All players**.
 6. Use **Undo last pick** if the live board was entered incorrectly.
@@ -36,7 +66,7 @@ The detailed walkthrough is in [Human Testing Guide](HUMAN_TESTING_GUIDE.md).
 - User turns show recommendation and roster first; opponent turns move the available-player table first so **Record taken** is immediately accessible.
 - The available-player table supports search, position pills, a row-level action, and pinned action/rank/player columns while limiting the live view to essential fields.
 - **Draft activity** now defaults to a real round-by-team snake board with position-colored cells, a highlighted user column, current-pick status, and an alternate chronological pick log.
-- **Player rankings** works before creating a session, offers quick Top 50/100/200/300 and complete all-player views, pins rank/player, and ranks across positions by value over replacement rather than raw fantasy points.
+- **Player rankings** works before creating a session, offers quick Top 50/100/200/300 and complete all-player views, pins consensus rank/player, and keeps the health-neutral value-over-replacement model as a secondary comparison.
 - Honest rookie, ADP, and live-news notes remain visible through compact badges and expandable details instead of dominating the primary action area.
 - Technical data, model, history, and rules tools remain available under **Advanced**.
 
@@ -47,8 +77,15 @@ The current production foundation remains:
 - 25,037 canonical players;
 - 199,629 weekly-stat rows;
 - 11,171 cutoff-safe player-season features and 9,804 historical targets;
-- one validated Phase 4 publication with 24 registered models and a 1,367-player 2026 projection board; and
-- 246 production ADP observations with transparent persistence and availability baselines.
+- active Phase 4 run `phase4-052d2866899a665a44f3`, with 24 registered candidates, 12
+  validation-selected transparent champions, and a 1,367-player 2026 projection board; and
+- six production ADP snapshots with 2,795 observations, 2,795 movement features, 8,385 forecast
+  rows, and 2,795 availability parameters.
+
+The post-rebuild standard-roster sanity check places Christian McCaffrey at RB3 / No. 6 overall
+with 306.0 health-neutral points and Jonathan Taylor at RB4 / No. 9 overall with 293.6. Their
+FantasyPros composite ADPs are 5.6 and 7.0. This is the intended correction to the prior board that
+discounted Taylor to 12 projected games.
 
 ## Two recommendation layers
 
@@ -58,7 +95,7 @@ The app now keeps two distinct contracts instead of blocking all advice behind m
 
 This is the primary **Best pick now** experience. It uses only evidence already validated for the draft session:
 
-- player P10/P50/P90 season projections;
+- health-neutral P10/P50/P90 points-per-game projections scaled to 17 games for every player;
 - league-specific replacement levels;
 - positional drop-off among available players;
 - exact starter/FLEX/bench rules; and
@@ -70,7 +107,15 @@ The board includes 233 live rookies whose rows are explicitly `rookie_heuristic_
 
 ### Market-enhanced simulation — still gated
 
-The Phase 6 Monte Carlo engine additionally models opponent selections and whether players may survive to the user's next pick. That contract correctly remains unavailable because 0 of 203 compatible QB/RB/WR/TE ADP rows currently have reviewed canonical mappings. Current ADP and next-pick timing are therefore unavailable for every compatible player. The configuration requires 100% compatible canonical market coverage, so all 203 rows must be reviewed correctly before this layer can become ready. The 43 archived PK/DEF rows remain outside the projected draftable-position scope.
+The Phase 6 Monte Carlo engine additionally models opponent selections and whether players may
+survive to the user's next pick. That strict contract remains unavailable because 877 of 1,278
+compatible source observations map to active projection players (68.6%) while the versioned
+configuration requires 100%. Cross-source observations prefer the uploaded FantasyPros composite
+when available, then select the newest compatible fallback deterministically. Another 295 rows are
+safely excluded from the frozen recommendation pool,
+including 245 mapped market-only IDs and seven projection/source position mismatches. Player Export
+can still show accepted current ADP; next-pick timing remains unavailable until the residual review
+queue is resolved and Phase 5 is rebuilt.
 
 To unlock that optional layer, review identities carefully and rebuild Phase 5:
 
@@ -104,7 +149,7 @@ Use the app like a fantasy-football player rather than like its developer. Recor
 - which details should be collapsed or removed; and
 - which missing features would materially improve the next real draft.
 
-The most important known limitation is live context: injury, suspension, and depth-chart updates are not wired into the model or UI. Check current player news before acting on any recommendation.
+The model deliberately does not forecast missed games: every draft-facing player is scaled to 17 healthy games. Live injury, suspension, and depth-chart updates are still not wired into the model or UI, so check current player news before acting on any recommendation.
 
 ## Likely next product increments
 
@@ -115,7 +160,8 @@ Prioritize these from actual human-test evidence:
 3. Add bye-week and team-stack context to the existing roster panel.
 4. Add a supported live or import-based Sleeper/ESPN draft sync, with explicit authorization and failure handling.
 5. Wire a reviewed current-news/injury input with provenance and timestamps.
-6. Correctly review all 203 compatible ADP identities required to enable next-pick availability forecasts.
+6. Review the remaining compatible ADP identities required to move enhanced simulation from
+   68.6% to its 100% coverage gate.
 7. Add cheat-sheet export after the on-screen rankings flow is validated.
 
 Do not start outcome/championship modeling automatically. That remains evidence-gated.
@@ -143,4 +189,8 @@ The existing documented minimum remains 100 analysis-ready league-seasons, 1,000
 
 Phase 8 PR #8 was merged to `main` at commit `f321c325e0620cb43cae48edc098c3084a040dca`. After the GitHub Actions service outage recovered, Phase 6 pull-request run `31118319345`, the Phase 7 pull-request rerun and `main` retrigger, and the Phase 8 pull-request and resulting `main` runs all received real hosted runners and completed green. On August 14, 2026, the affected Phase 6 `main` run `31119062454` was safely canceled and rerun; attempt 2 received hosted job `94857281821` and completed green in 1 minute 49 seconds with Ruff, mypy, and pytest passing. Later green descendant `main` runs also include the Phase 6 code.
 
-The recommendation-first milestone passes Ruff, strict mypy across 97 source files, all 299 repository tests, the production audit across eight manifests and 12 immutable raw files, and real browser QA of quick start, user/opponent table picks, search reset, persistence, rankings, help, and undo. Its temporary browser-test draft was removed and all local-state counters returned to zero. Hosted pull-request and resulting `main` evidence remain the publication gate; GitHub Actions is the live source of truth.
+The production audit passes across 15 manifests and 19 verified immutable files after the
+deterministic Phase 5 rebuild. The refreshed Player Export route was verified with 1,368 players,
+276 with market data, 927 platform observations, 165 complete comparisons, search reset, and
+QB/RB/WR/TE-only filtering. Hosted pull-request and resulting `main` evidence remain the
+publication gate; GitHub Actions is the live source of truth.

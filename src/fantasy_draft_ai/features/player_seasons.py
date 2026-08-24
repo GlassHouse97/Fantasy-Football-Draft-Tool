@@ -20,7 +20,7 @@ from fantasy_draft_ai.rules.models import LeagueRules
 from fantasy_draft_ai.schemas.quality import QualityIssue, Severity
 from fantasy_draft_ai.scoring.engine import PlayerStatLine, score_player
 
-FEATURE_VERSION = "phase3-v1"
+FEATURE_VERSION = "phase3-v2"
 CORE_POSITIONS = frozenset({"QB", "RB", "WR", "TE"})
 HISTORY_WEIGHTS = (0.60, 0.30, 0.10)
 POSITION_PRIOR_STRENGTH_GAMES = 8.0
@@ -1865,6 +1865,14 @@ def _age_on(birth_date: date | None, cutoff: date) -> float | None:
 
 
 def _age_adjustment(position: str, age: float | None) -> float:
+    """Return a transparent, continuous age adjustment for baseline projections.
+
+    Age is a performance input, not an injury forecast. Older versions used abrupt
+    birthday cliffs (for example, an RB changed from 0.96 to 0.90 immediately after
+    age 27). A smooth bounded decline avoids those artificial discontinuities while
+    preserving a conservative veteran trend.
+    """
+
     if age is None:
         return 1.0
     if position == "QB":
@@ -1872,30 +1880,37 @@ def _age_adjustment(position: str, age: float | None) -> float:
             return 1.03
         if age <= 34:
             return 1.0
-        return 0.94 if age <= 37 else 0.86
+        return _bounded_age_decline(age, start_age=34, annual_decline=0.02, floor=0.86)
     if position == "RB":
         if age < 24:
             return 1.03
         if age <= 26:
             return 1.0
-        if age <= 27:
-            return 0.96
-        if age <= 28:
-            return 0.90
-        return 0.82
+        return _bounded_age_decline(age, start_age=26, annual_decline=0.03, floor=0.82)
     if position == "WR":
         if age < 24:
             return 1.04
         if age <= 27:
             return 1.0
-        if age <= 29:
-            return 0.96
-        return 0.88
+        return _bounded_age_decline(age, start_age=27, annual_decline=0.02, floor=0.88)
     if age < 25:
         return 1.03
     if age <= 29:
         return 1.0
-    return 0.92
+    return _bounded_age_decline(age, start_age=29, annual_decline=0.02, floor=0.92)
+
+
+def _bounded_age_decline(
+    age: float,
+    *,
+    start_age: float,
+    annual_decline: float,
+    floor: float,
+) -> float:
+    """Apply a continuous linear decline with an explicit lower bound."""
+
+    decline_years = max(0.0, age - start_age)
+    return round(max(floor, 1.0 - annual_decline * decline_years), 6)
 
 
 def _mean(values: list[float]) -> float:

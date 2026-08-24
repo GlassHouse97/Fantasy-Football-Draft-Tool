@@ -6,6 +6,8 @@ import csv
 import hashlib
 import json
 import math
+import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -19,7 +21,9 @@ from fantasy_draft_ai.data.manifests import SourceManifest, sha256_file
 from fantasy_draft_ai.data.warehouse import Warehouse
 from fantasy_draft_ai.schemas.quality import QualityIssue, QualityReport, Severity
 
-ADP_SOURCES = frozenset({"espn", "ffc"})
+ADP_SOURCES = frozenset(
+    {"espn", "fantasypros", "ffc", "rtsports", "sleeper", "underdog", "yahoo"}
+)
 ESPN_REQUIRED_COLUMNS = frozenset(
     {
         "captured_at",
@@ -32,6 +36,20 @@ ESPN_REQUIRED_COLUMNS = frozenset(
         "espn_player_id",
         "rank",
         "average_pick",
+    }
+)
+PLATFORM_REQUIRED_COLUMNS = frozenset(
+    {
+        "captured_at",
+        "season",
+        "source",
+        "scoring_format",
+        "team_count",
+        "source_player_id",
+        "player_name",
+        "position",
+        "average_pick",
+        "rank",
     }
 )
 
@@ -153,8 +171,23 @@ class _LoadMetrics:
     impossible_picks_or_rounds: int = 0
 
 
+@dataclass(frozen=True)
+class _CanonicalIdentity:
+    player_id: str
+    display_name: str
+    position: str
+    nfl_team: str | None
+    current: bool
+
+
+@dataclass(frozen=True)
+class _IdentityIndex:
+    direct: dict[tuple[str, str], str]
+    by_name_position: dict[tuple[str, str], tuple[_CanonicalIdentity, ...]]
+
+
 def find_adp_manifest_paths(config: AppConfig) -> tuple[Path, ...]:
-    """Return every valid archived FFC or ESPN manifest, including duplicates."""
+    """Return every valid archived supported ADP manifest, including duplicates."""
 
     root = config.resolve(config.paths.manifests)
     matches: list[Path] = []
@@ -167,7 +200,7 @@ def find_adp_manifest_paths(config: AppConfig) -> tuple[Path, ...]:
             matches.append(path.resolve())
     if not matches:
         raise FileNotFoundError(
-            "No archived FFC or ESPN ADP manifests were found. Archive a snapshot first."
+            "No archived supported ADP manifests were found. Archive a snapshot first."
         )
     return tuple(matches)
 
@@ -197,14 +230,24 @@ def load_adp_to_warehouse(
             if capture.source == "ffc":
                 snapshots.extend(_normalize_ffc(capture, metrics, issues))
             elif capture.source == "espn":
-                snapshots.extend(
-                    _normalize_espn(
-                        capture,
-                        metrics,
-                        issues,
-                        include_synthetic=include_synthetic,
+                if _is_generic_platform_csv(capture.raw_path):
+                    snapshots.extend(_normalize_platform_csv(capture, metrics, issues))
+                else:
+                    snapshots.extend(
+                        _normalize_espn(
+                            capture,
+                            metrics,
+                            issues,
+                            include_synthetic=include_synthetic,
+                        )
                     )
-                )
+            elif capture.source == "sleeper":
+                if _is_generic_platform_csv(capture.raw_path):
+                    snapshots.extend(_normalize_platform_csv(capture, metrics, issues))
+                else:
+                    snapshots.extend(_normalize_sleeper(capture, metrics, issues))
+            elif capture.source in {"fantasypros", "rtsports", "underdog", "yahoo"}:
+                snapshots.extend(_normalize_platform_csv(capture, metrics, issues))
 
     if metrics.required_field_failures:
         issues.append(
@@ -234,16 +277,44 @@ def load_adp_to_warehouse(
             manifest_paths=selected_paths,
         )
 
+    identity_index = _load_identity_index(
+        config,
+        issues,
+        sources=frozenset(snapshot.source for snapshot in snapshots),
+    )
+    if _has_fatal(issues):
+        return AdpLoadResult(
+            quality=_quality_report(metrics, issues, unresolved_players=0),
+            snapshots=(),
+            committed=False,
+            skipped_synthetic_rows=metrics.skipped_synthetic_rows,
+            manifest_paths=selected_paths,
+        )
+
     warehouse = Warehouse(config.resolve(config.paths.warehouse))
     warehouse.initialize()
-    summaries, unresolved = _commit_snapshots(warehouse, snapshots)
+    summaries, unresolved = _commit_snapshots(
+        warehouse,
+        snapshots,
+        identity_index,
+        issues,
+    )
+    if _has_fatal(issues):
+        return AdpLoadResult(
+            quality=_quality_report(metrics, issues, unresolved_players=0),
+            snapshots=(),
+            committed=False,
+            skipped_synthetic_rows=metrics.skipped_synthetic_rows,
+            manifest_paths=selected_paths,
+        )
     if unresolved:
         issues.append(
             QualityIssue(
                 code="unresolved_player_mappings",
                 message=(
-                    "ADP observations without an exact reviewed source-ID mapping were "
-                    "retained with a null canonical player_id."
+                    "ADP observations without exact platform-ID evidence, a reviewed mapping, "
+                    "or one unique current name/position/team match were retained with a null "
+                    "canonical player_id."
                 ),
                 count=unresolved,
             )
@@ -281,7 +352,8 @@ def _resolve_captures(
     issues: list[QualityIssue],
 ) -> list[_RawCapture]:
     project_root = config.project_root.resolve()
-    captures: dict[tuple[Path, str], _RawCapture] = {}
+    captures: dict[tuple[str, str], _RawCapture] = {}
+    source_by_archived_file: dict[tuple[Path, str], str] = {}
     for manifest_path in manifest_paths:
         try:
             manifest = SourceManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
@@ -299,7 +371,10 @@ def _resolve_captures(
             issues.append(
                 QualityIssue(
                     code="wrong_adp_manifest_source",
-                    message=f"Expected an FFC or ESPN manifest, received {manifest.source!r}.",
+                    message=(
+                        "Expected a supported ADP manifest source, received "
+                        f"{manifest.source!r}."
+                    ),
                     severity=Severity.FATAL,
                 )
             )
@@ -345,7 +420,20 @@ def _resolve_captures(
                     )
                 )
                 continue
-            key = (raw_path, actual_hash)
+            archived_file_key = (raw_path, actual_hash)
+            prior_source = source_by_archived_file.get(archived_file_key)
+            if prior_source is not None and prior_source != source:
+                issues.append(
+                    QualityIssue(
+                        code="conflicting_adp_provenance",
+                        message=f"Raw file {relative} is attributed to multiple ADP sources.",
+                        severity=Severity.FATAL,
+                    )
+                )
+                continue
+            source_by_archived_file[archived_file_key] = source
+
+            key = (source, actual_hash)
             capture = captures.get(key)
             if capture is None:
                 capture = _RawCapture(
@@ -356,19 +444,230 @@ def _resolve_captures(
                     acquired_at=_as_utc(manifest.acquired_at),
                 )
                 captures[key] = capture
-            elif capture.source != source:
-                issues.append(
-                    QualityIssue(
-                        code="conflicting_adp_provenance",
-                        message=f"Raw file {relative} is attributed to multiple ADP sources.",
-                        severity=Severity.FATAL,
-                    )
-                )
-                continue
+            elif Path(relative).as_posix() < capture.raw_relative_path:
+                # Identical bytes archived under different immutable paths represent one
+                # capture. Keep a deterministic representative path while merging every
+                # manifest dataset ID into the canonical snapshot provenance.
+                capture.raw_relative_path = Path(relative).as_posix()
+                capture.raw_path = raw_path
             capture.acquired_at = min(capture.acquired_at, _as_utc(manifest.acquired_at))
             capture.source_dataset_ids.add(manifest.dataset_id)
             capture.manifest_seasons.update(manifest.seasons)
     return list(captures.values())
+
+
+def _load_identity_index(
+    config: AppConfig,
+    issues: list[QualityIssue],
+    *,
+    sources: frozenset[str],
+) -> _IdentityIndex:
+    """Build exact platform-ID and conservative composite identity evidence."""
+
+    warehouse = Warehouse(config.resolve(config.paths.warehouse))
+    warehouse.initialize()
+    with warehouse.connect(read_only=True) as connection:
+        raw_players = connection.execute(
+            """
+            SELECT player.player_id, player.gsis_id, player.espn_id,
+                   player.sleeper_id, player.yahoo_id, player.display_name,
+                   coalesce(player.canonical_position, ''), player.nfl_team,
+                   coalesce(player.is_active, false)
+                     OR EXISTS (
+                         SELECT 1 FROM player_projection_board AS board
+                         WHERE board.player_id = player.player_id
+                           AND board.prediction_season = ?
+                     ) AS current
+            FROM players AS player
+            """,
+            [config.project.prediction_season],
+        ).fetchall()
+
+    direct: dict[tuple[str, str], str] = {}
+    ambiguous_direct: set[tuple[str, str]] = set()
+    canonical_by_gsis: dict[str, str] = {}
+    by_name: dict[tuple[str, str], list[_CanonicalIdentity]] = {}
+    for raw in raw_players:
+        player_id = str(raw[0])
+        gsis_id = _identifier_text(raw[1])
+        if gsis_id is not None:
+            prior_player_id = canonical_by_gsis.get(gsis_id)
+            if prior_player_id is not None and prior_player_id != player_id:
+                issues.append(
+                    QualityIssue(
+                        code="conflicting_gsis_identity",
+                        message=(
+                            f"GSIS identity {gsis_id} maps to both {prior_player_id} and "
+                            f"{player_id}."
+                        ),
+                        severity=Severity.FATAL,
+                    )
+                )
+            else:
+                canonical_by_gsis[gsis_id] = player_id
+        for source, value in (("espn", raw[2]), ("sleeper", raw[3]), ("yahoo", raw[4])):
+            if source not in sources:
+                continue
+            source_id = _identifier_text(value)
+            if source_id is not None:
+                _add_direct_identity(
+                    direct,
+                    ambiguous_direct,
+                    source,
+                    source_id,
+                    player_id,
+                    issues,
+                )
+        display_name = _optional_text(raw[5])
+        position = _normalize_position(_optional_text(raw[6]))
+        if display_name is None or position is None:
+            continue
+        identity = _CanonicalIdentity(
+            player_id=player_id,
+            display_name=display_name,
+            position=position,
+            nfl_team=_normalize_team(_optional_text(raw[7])),
+            current=bool(raw[8]),
+        )
+        by_name.setdefault((_normalize_name(display_name), position), []).append(identity)
+
+    exact_crosswalk_sources = sources & {"espn", "sleeper", "yahoo"}
+    crosswalk_path = (
+        _latest_verified_ff_playerids_path(config, issues)
+        if exact_crosswalk_sources
+        else None
+    )
+    if crosswalk_path is not None and not _has_fatal(issues):
+        try:
+            with duckdb.connect() as connection:
+                crosswalk_rows = connection.execute(
+                    """
+                    SELECT gsis_id, espn_id, sleeper_id, yahoo_id
+                    FROM read_parquet(?)
+                    WHERE gsis_id IS NOT NULL
+                    """,
+                    [str(crosswalk_path)],
+                ).fetchall()
+        except duckdb.Error as exc:
+            issues.append(
+                QualityIssue(
+                    code="unreadable_ff_playerids_crosswalk",
+                    message=f"Could not read the archived fantasy-ID crosswalk: {exc}",
+                    severity=Severity.FATAL,
+                )
+            )
+            crosswalk_rows = []
+        for gsis_value, espn_value, sleeper_value, yahoo_value in crosswalk_rows:
+            gsis_id = _identifier_text(gsis_value)
+            crosswalk_player_id = canonical_by_gsis.get(gsis_id or "")
+            if crosswalk_player_id is None:
+                continue
+            for source, value in (
+                ("espn", espn_value),
+                ("sleeper", sleeper_value),
+                ("yahoo", yahoo_value),
+            ):
+                if source not in exact_crosswalk_sources:
+                    continue
+                source_id = _identifier_text(value)
+                if source_id is not None:
+                    _add_direct_identity(
+                        direct,
+                        ambiguous_direct,
+                        source,
+                        source_id,
+                        crosswalk_player_id,
+                        issues,
+                    )
+
+    return _IdentityIndex(
+        direct=direct,
+        by_name_position={
+            key: tuple(sorted(values, key=lambda item: item.player_id))
+            for key, values in by_name.items()
+        },
+    )
+
+
+def _latest_verified_ff_playerids_path(
+    config: AppConfig,
+    issues: list[QualityIssue],
+) -> Path | None:
+    manifest_root = config.resolve(config.paths.manifests)
+    candidates: list[tuple[datetime, SourceManifest]] = []
+    for manifest_path in sorted(manifest_root.glob("*.json")) if manifest_root.exists() else ():
+        try:
+            manifest = SourceManifest.model_validate_json(
+                manifest_path.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            continue
+        if manifest.source.casefold() == "nflverse_ff_playerids":
+            candidates.append((_as_utc(manifest.acquired_at), manifest))
+    if not candidates:
+        issues.append(
+            QualityIssue(
+                code="missing_ff_playerids_crosswalk",
+                message=(
+                    "No archived nflverse fantasy-ID crosswalk was found; canonical mapping "
+                    "will use existing IDs and conservative composite evidence only."
+                ),
+            )
+        )
+        return None
+    manifest = max(candidates, key=lambda item: item[0])[1]
+    if len(manifest.raw_files) != 1 or len(manifest.sha256) != 1:
+        issues.append(
+            QualityIssue(
+                code="invalid_ff_playerids_manifest",
+                message="The latest fantasy-ID crosswalk manifest must describe one raw file.",
+                severity=Severity.FATAL,
+            )
+        )
+        return None
+    raw_path = (config.project_root / manifest.raw_files[0]).resolve()
+    if (
+        not raw_path.is_relative_to(config.project_root.resolve())
+        or not raw_path.is_file()
+        or sha256_file(raw_path) != manifest.sha256[0]
+    ):
+        issues.append(
+            QualityIssue(
+                code="invalid_ff_playerids_archive",
+                message="The latest fantasy-ID crosswalk raw file is missing or hash-invalid.",
+                severity=Severity.FATAL,
+            )
+        )
+        return None
+    return raw_path
+
+
+def _add_direct_identity(
+    direct: dict[tuple[str, str], str],
+    ambiguous: set[tuple[str, str]],
+    source: str,
+    source_id: str,
+    player_id: str,
+    issues: list[QualityIssue],
+) -> None:
+    key = (source.casefold(), source_id)
+    if key in ambiguous:
+        return
+    prior = direct.get(key)
+    if prior is not None and prior != player_id:
+        direct.pop(key)
+        ambiguous.add(key)
+        issues.append(
+            QualityIssue(
+                code="ambiguous_platform_identity",
+                message=(
+                    f"Platform identity {source}:{source_id} maps to both {prior} and "
+                    f"{player_id}; exact mapping for this source ID was disabled."
+                ),
+            )
+        )
+        return
+    direct[key] = player_id
 
 
 def _normalize_ffc(
@@ -580,6 +879,242 @@ def _normalize_espn(
     ]
 
 
+def _is_generic_platform_csv(path: Path) -> bool:
+    if path.suffix.casefold() != ".csv":
+        return False
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            columns = set(csv.DictReader(handle).fieldnames or ())
+    except (OSError, csv.Error):
+        return False
+    return PLATFORM_REQUIRED_COLUMNS.issubset(columns)
+
+
+def _normalize_platform_csv(
+    capture: _RawCapture,
+    metrics: _LoadMetrics,
+    issues: list[QualityIssue],
+) -> list[_NormalizedSnapshot]:
+    """Normalize one validated standard official/licensed platform export."""
+
+    try:
+        with capture.raw_path.open(encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            columns = set(reader.fieldnames or ())
+            missing = sorted(PLATFORM_REQUIRED_COLUMNS - columns)
+            if missing:
+                issues.append(
+                    QualityIssue(
+                        code="missing_platform_adp_columns",
+                        message=f"Missing platform ADP columns: {', '.join(missing)}",
+                        count=len(missing),
+                        severity=Severity.FATAL,
+                    )
+                )
+                return []
+            raw_rows = list(reader)
+    except (OSError, csv.Error) as exc:
+        issues.append(
+            QualityIssue(
+                code="invalid_platform_adp_csv",
+                message=f"Could not read platform ADP CSV {capture.raw_path}: {exc}",
+                severity=Severity.FATAL,
+            )
+        )
+        return []
+    metrics.raw_rows += len(raw_rows)
+    grouped: dict[tuple[datetime, int, str, int], list[_AdpRow]] = {}
+    for value in raw_rows:
+        try:
+            captured_at = _parse_timestamp(value.get("captured_at"))
+            season = _required_int(value.get("season"))
+            source = _required_text(value.get("source")).casefold()
+            scoring_format = _normalize_scoring_format(
+                _required_text(value.get("scoring_format"))
+            )
+            team_count = _required_int(value.get("team_count"))
+            source_player_id = _required_identifier(value.get("source_player_id"))
+            player_name = _required_text(value.get("player_name"))
+            position = _normalize_position(_required_text(value.get("position")))
+            if position is None:
+                raise ValueError("Required position value is missing or invalid.")
+            average_pick = _required_float(value.get("average_pick"))
+            rank = _required_int(value.get("rank"))
+        except ValueError:
+            metrics.required_field_failures += 1
+            metrics.excluded_rows += 1
+            continue
+        if source != capture.source:
+            metrics.required_field_failures += 1
+            metrics.excluded_rows += 1
+            continue
+        if capture.manifest_seasons and season not in capture.manifest_seasons:
+            issues.append(
+                QualityIssue(
+                    code="adp_manifest_season_mismatch",
+                    message=(
+                        f"Platform row season {season} is absent from manifest seasons "
+                        f"{sorted(capture.manifest_seasons)}."
+                    ),
+                    severity=Severity.FATAL,
+                )
+            )
+        grouped.setdefault((captured_at, season, scoring_format, team_count), []).append(
+            _AdpRow(
+                raw_source_row_id=source_player_id,
+                player_name=player_name,
+                position=position,
+                nfl_team=_optional_text(value.get("nfl_team")),
+                average_pick=average_pick,
+                median_pick=_optional_float(value.get("median_pick")),
+                rank=rank,
+                min_pick=_optional_float(value.get("min_pick")),
+                max_pick=_optional_float(value.get("max_pick")),
+                sample_size=_optional_int(value.get("sample_size")),
+                movement=_optional_float(value.get("movement")),
+                source_stddev=_optional_float(value.get("source_stddev")),
+                source_movement_horizon=_optional_text(
+                    value.get("source_movement_horizon")
+                ),
+            )
+        )
+    return [
+        _make_snapshot(
+            capture,
+            captured_at=scope[0],
+            season=scope[1],
+            scoring_format=scope[2],
+            team_count=scope[3],
+            position_scope="overall",
+            rows=rows,
+        )
+        for scope, rows in sorted(grouped.items(), key=lambda item: item[0])
+    ]
+
+
+def _normalize_sleeper(
+    capture: _RawCapture,
+    metrics: _LoadMetrics,
+    issues: list[QualityIssue],
+) -> list[_NormalizedSnapshot]:
+    """Normalize Sleeper's current full-PPR projections/ADP response."""
+
+    try:
+        payload: Any = json.loads(capture.raw_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        issues.append(
+            QualityIssue(
+                code="invalid_sleeper_json",
+                message=f"Could not read Sleeper JSON {capture.raw_path}: {exc}",
+                severity=Severity.FATAL,
+            )
+        )
+        return []
+    if not isinstance(payload, list):
+        issues.append(
+            QualityIssue(
+                code="invalid_sleeper_payload",
+                message="Sleeper ADP JSON must be a list of player projection rows.",
+                severity=Severity.FATAL,
+            )
+        )
+        return []
+    metrics.raw_rows += len(payload)
+    candidates: list[_AdpRow] = []
+    for value in payload:
+        if not isinstance(value, dict):
+            metrics.required_field_failures += 1
+            metrics.excluded_rows += 1
+            continue
+        player = value.get("player")
+        stats = value.get("stats")
+        if not isinstance(player, dict) or not isinstance(stats, dict):
+            metrics.excluded_rows += 1
+            continue
+        source_player_id = _optional_text(value.get("player_id"))
+        position = _normalize_position(_optional_text(player.get("position")))
+        average_pick = _optional_float(stats.get("adp_ppr"))
+        if (
+            source_player_id is None
+            or position not in {"QB", "RB", "TE", "WR"}
+            or average_pick is None
+            or average_pick >= 900.0
+        ):
+            metrics.excluded_rows += 1
+            continue
+        player_name = _optional_text(player.get("full_name")) or " ".join(
+            part
+            for part in (
+                _optional_text(player.get("first_name")),
+                _optional_text(player.get("last_name")),
+            )
+            if part is not None
+        ).strip()
+        if not player_name:
+            metrics.required_field_failures += 1
+            metrics.excluded_rows += 1
+            continue
+        candidates.append(
+            _AdpRow(
+                raw_source_row_id=source_player_id,
+                player_name=player_name,
+                position=position,
+                nfl_team=_optional_text(player.get("team") or value.get("team")),
+                average_pick=average_pick,
+                median_pick=None,
+                rank=None,
+                min_pick=None,
+                max_pick=None,
+                sample_size=None,
+                movement=None,
+                source_stddev=None,
+                source_movement_horizon=None,
+            )
+        )
+    ordered = sorted(
+        candidates,
+        key=lambda row: (
+            row.average_pick if row.average_pick is not None else float("inf"),
+            row.raw_source_row_id,
+        ),
+    )
+    rows = [replace(row, rank=index) for index, row in enumerate(ordered, start=1)]
+    if len(rows) < 100:
+        issues.append(
+            QualityIssue(
+                code="insufficient_sleeper_adp_rows",
+                message=f"Sleeper capture produced only {len(rows)} usable PPR ADP rows.",
+                count=len(rows),
+                severity=Severity.FATAL,
+            )
+        )
+        return []
+    if len(capture.manifest_seasons) != 1:
+        issues.append(
+            QualityIssue(
+                code="invalid_sleeper_manifest_season",
+                message=(
+                    "Sleeper ADP manifests must identify exactly one season; found "
+                    f"{sorted(capture.manifest_seasons)}."
+                ),
+                severity=Severity.FATAL,
+            )
+        )
+        return []
+    season = next(iter(capture.manifest_seasons))
+    return [
+        _make_snapshot(
+            capture,
+            captured_at=capture.acquired_at,
+            season=season,
+            scoring_format="ppr",
+            team_count=12,
+            position_scope="overall",
+            rows=rows,
+        )
+    ]
+
+
 def _make_snapshot(
     capture: _RawCapture,
     *,
@@ -713,17 +1248,39 @@ def _valid_adp_row(row: _AdpRow) -> bool:
 def _commit_snapshots(
     warehouse: Warehouse,
     snapshots: list[_NormalizedSnapshot],
+    identity_index: _IdentityIndex,
+    issues: list[QualityIssue],
 ) -> tuple[tuple[AdpSnapshotLoadSummary, ...], int]:
     summaries: list[AdpSnapshotLoadSummary] = []
     with warehouse.connect() as connection:
+        mappings = _reviewed_source_mappings(connection)
+        conflicts = [
+            (key, reviewed[0], identity_index.direct[key])
+            for key, reviewed in mappings.items()
+            if key in identity_index.direct and reviewed[0] != identity_index.direct[key]
+        ]
+        if conflicts:
+            for (source, source_player_id), reviewed_player_id, exact_player_id in conflicts:
+                issues.append(
+                    QualityIssue(
+                        code="conflicting_reviewed_platform_identity",
+                        message=(
+                            f"Reviewed mapping {source}:{source_player_id} points to "
+                            f"{reviewed_player_id}, but exact platform-ID evidence points to "
+                            f"{exact_player_id}. No ADP snapshots were committed."
+                        ),
+                        severity=Severity.FATAL,
+                    )
+                )
+            return (), 0
         try:
             connection.execute("BEGIN TRANSACTION")
-            mappings = _reviewed_source_mappings(connection)
             resolved_snapshots = [
                 replace(
                     snapshot,
                     rows=tuple(
-                        _apply_mapping(snapshot.source, row, mappings) for row in snapshot.rows
+                        _apply_mapping(snapshot.source, row, mappings, identity_index)
+                        for row in snapshot.rows
                     ),
                 )
                 for snapshot in snapshots
@@ -772,21 +1329,55 @@ def _reviewed_source_mappings(
         WHERE mapping.mapping_confidence = 'reviewed'
         """
     ).fetchall()
-    return {
-        (str(source).casefold(), str(source_player_id)): (str(player_id), str(confidence))
-        for source, source_player_id, player_id, confidence in rows
-    }
+    mappings: dict[tuple[str, str], tuple[str, str]] = {}
+    for source, source_player_id, player_id, confidence in rows:
+        normalized_source_id = _identifier_text(source_player_id)
+        if normalized_source_id is None:
+            continue
+        mappings[(str(source).strip().casefold(), normalized_source_id)] = (
+            str(player_id),
+            str(confidence),
+        )
+    return mappings
 
 
 def _apply_mapping(
     source: str,
     row: _AdpRow,
     mappings: dict[tuple[str, str], tuple[str, str]],
+    identity_index: _IdentityIndex,
 ) -> _AdpRow:
-    mapping = mappings.get((source.casefold(), row.raw_source_row_id))
-    if mapping is None:
+    source_key = source.casefold()
+    source_player_id = _identifier_text(row.raw_source_row_id)
+    if source_player_id is None:
         return replace(row, player_id=None, mapping_confidence="unresolved")
-    return replace(row, player_id=mapping[0], mapping_confidence=mapping[1])
+
+    reviewed = mappings.get((source_key, source_player_id))
+    if reviewed is not None:
+        return replace(row, player_id=reviewed[0], mapping_confidence="reviewed")
+
+    exact_player_id = identity_index.direct.get((source_key, source_player_id))
+    if exact_player_id is not None:
+        return replace(row, player_id=exact_player_id, mapping_confidence="exact")
+
+    position = _normalize_position(row.position)
+    normalized_name = _normalize_name(row.player_name)
+    if not normalized_name or position is None:
+        return replace(row, player_id=None, mapping_confidence="unresolved")
+    candidates = [
+        candidate
+        for candidate in identity_index.by_name_position.get(
+            (normalized_name, position),
+            (),
+        )
+        if candidate.current
+    ]
+    source_team = _normalize_team(row.nfl_team)
+    if source_team is not None:
+        candidates = [candidate for candidate in candidates if candidate.nfl_team == source_team]
+    if len(candidates) != 1:
+        return replace(row, player_id=None, mapping_confidence="unresolved")
+    return replace(row, player_id=candidates[0].player_id, mapping_confidence="high")
 
 
 def _snapshot_row_count(
@@ -931,6 +1522,166 @@ def _required_text(value: object) -> str:
     return text
 
 
+def _identifier_text(value: object) -> str | None:
+    """Return a stable textual platform identifier without inventing an ID."""
+
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        return str(int(value)) if value.is_integer() else str(value)
+    text = _optional_text(value)
+    if text is None or text.casefold() in {"nan", "none", "null"}:
+        return None
+    numeric_float = re.fullmatch(r"([+-]?\d+)\.0+", text)
+    return numeric_float.group(1) if numeric_float is not None else text
+
+
+def _required_identifier(value: object) -> str:
+    identifier = _identifier_text(value)
+    if identifier is None:
+        raise ValueError("Required platform identifier is missing or invalid.")
+    return identifier
+
+
+def _normalize_name(value: str) -> str:
+    """Normalize a full player name for conservative composite matching only."""
+
+    ascii_text = (
+        unicodedata.normalize("NFKD", value)
+        .encode("ascii", errors="ignore")
+        .decode("ascii")
+        .casefold()
+    )
+    tokens = re.findall(r"[a-z0-9]+", ascii_text)
+    while tokens and tokens[-1] in {"jr", "sr", "ii", "iii", "iv", "v"}:
+        tokens.pop()
+    return "".join(tokens)
+
+
+def _normalize_position(value: str | None) -> str | None:
+    text = _optional_text(value)
+    if text is None:
+        return None
+    compact = re.sub(r"[^A-Z]", "", text.upper())
+    if compact in {"D", "DEF", "DEFENSE", "DST"}:
+        return "DST"
+    return compact or None
+
+
+_NFL_TEAM_ALIASES = {
+    "ARIZONACARDINALS": "ARI",
+    "ARZ": "ARI",
+    "ATLANTAFALCONS": "ATL",
+    "BALTIMORERAVENS": "BAL",
+    "BLT": "BAL",
+    "BUFFALOBILLS": "BUF",
+    "CAROLINAPANTHERS": "CAR",
+    "CHICAGOBEARS": "CHI",
+    "CINCINNATIBENGALS": "CIN",
+    "CLEVELANDBROWNS": "CLE",
+    "CLV": "CLE",
+    "DALLASCOWBOYS": "DAL",
+    "DENVERBRONCOS": "DEN",
+    "DETROITLIONS": "DET",
+    "GREENBAYPACKERS": "GB",
+    "GNB": "GB",
+    "HOUSTONTEXANS": "HOU",
+    "HST": "HOU",
+    "INDIANAPOLISCOLTS": "IND",
+    "JACKSONVILLEJAGUARS": "JAX",
+    "JAC": "JAX",
+    "KANSASCITYCHIEFS": "KC",
+    "KAN": "KC",
+    "LASVEGASRAIDERS": "LV",
+    "LVR": "LV",
+    "OAK": "LV",
+    "LOSANGELESCHARGERS": "LAC",
+    "SD": "LAC",
+    "SANDIEGOCHARGERS": "LAC",
+    "LOSANGELESRAMS": "LAR",
+    "STL": "LAR",
+    "STLOUISRAMS": "LAR",
+    "MIAMIDOLPHINS": "MIA",
+    "MINNESOTAVIKINGS": "MIN",
+    "NEWENGLANDPATRIOTS": "NE",
+    "NWE": "NE",
+    "NEWORLEANSSAINTS": "NO",
+    "NOR": "NO",
+    "NEWYORKGIANTS": "NYG",
+    "NEWYORKJETS": "NYJ",
+    "PHILADELPHIAEAGLES": "PHI",
+    "PITTSBURGHSTEELERS": "PIT",
+    "SEATTLESEAHAWKS": "SEA",
+    "SANFRANCISCO49ERS": "SF",
+    "SFO": "SF",
+    "TAMPABAYBUCCANEERS": "TB",
+    "TAM": "TB",
+    "TENNESSEETITANS": "TEN",
+    "WASHINGTONCOMMANDERS": "WAS",
+    "WASHINGTONFOOTBALLTEAM": "WAS",
+    "WASHINGTONREDSKINS": "WAS",
+    "WSH": "WAS",
+}
+_NFL_TEAM_ABBREVIATIONS = frozenset(
+    {
+        "ARI",
+        "ATL",
+        "BAL",
+        "BUF",
+        "CAR",
+        "CHI",
+        "CIN",
+        "CLE",
+        "DAL",
+        "DEN",
+        "DET",
+        "GB",
+        "HOU",
+        "IND",
+        "JAX",
+        "KC",
+        "LV",
+        "LAC",
+        "LAR",
+        "MIA",
+        "MIN",
+        "NE",
+        "NO",
+        "NYG",
+        "NYJ",
+        "PHI",
+        "PIT",
+        "SEA",
+        "SF",
+        "TB",
+        "TEN",
+        "WAS",
+    }
+)
+
+
+def _normalize_team(value: str | None) -> str | None:
+    text = _optional_text(value)
+    if text is None:
+        return None
+    compact = re.sub(r"[^A-Z0-9]", "", text.upper())
+    if compact in {"", "FA", "FREEAGENT", "NONE", "NA", "NAN"}:
+        return None
+    if compact in _NFL_TEAM_ABBREVIATIONS:
+        return compact
+    # Preserve an explicit unknown value so composite matching fails closed instead
+    # of silently discarding contradictory team evidence.
+    return _NFL_TEAM_ALIASES.get(compact, compact)
+
+
+def _normalize_scoring_format(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.strip().casefold()).strip("_")
+
+
 def _optional_float(value: object) -> float | None:
     text = _optional_text(value)
     if text is None:
@@ -940,6 +1691,13 @@ def _optional_float(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
+
+
+def _required_float(value: object) -> float:
+    number = _optional_float(value)
+    if number is None:
+        raise ValueError("Required numeric value is missing or invalid.")
+    return number
 
 
 def _optional_int(value: object) -> int | None:

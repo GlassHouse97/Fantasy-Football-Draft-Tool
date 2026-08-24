@@ -103,6 +103,41 @@ def test_commands_are_idempotent_and_reject_stale_versions_and_duplicate_players
     assert repository.verify_session("draft-test") == first
 
 
+def test_pick_batch_is_atomic_and_persists_individual_replayable_events(tmp_path: Path) -> None:
+    repository, _ = _create_repository(tmp_path)
+
+    result = repository.record_pick_batch(
+        "draft-test",
+        ("p1", "p2", "p3"),
+        expected_version=0,
+        command_id="batch-command",
+    )
+
+    assert result.version == 3
+    assert [pick.player_id for pick in result.picks] == ["p1", "p2", "p3"]
+    assert repository.verify_session("draft-test") == result
+    with duckdb.connect(str(repository.path), read_only=True) as connection:
+        events = connection.execute(
+            "SELECT event_type, command_id FROM draft_events "
+            "WHERE session_id = 'draft-test' ORDER BY sequence"
+        ).fetchall()
+    assert events[1:] == [
+        ("pick_made", "batch-command-batch-1"),
+        ("pick_made", "batch-command-batch-2"),
+        ("pick_made", "batch-command-batch-3"),
+    ]
+
+    rollback_repository, _ = _create_repository(tmp_path / "rollback")
+    with pytest.raises(DraftStateError, match="already been selected"):
+        rollback_repository.record_pick_batch(
+            "draft-test",
+            ("p1", "p1"),
+            expected_version=0,
+            command_id="invalid-batch",
+        )
+    assert rollback_repository.verify_session("draft-test").version == 0
+
+
 def test_idempotency_key_is_bound_to_the_original_command_semantics(tmp_path: Path) -> None:
     repository, _ = _create_repository(tmp_path)
 

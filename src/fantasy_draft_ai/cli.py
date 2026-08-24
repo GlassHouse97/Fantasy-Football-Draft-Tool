@@ -29,6 +29,11 @@ from fantasy_draft_ai.data.sources.nflverse import (
     download_nflverse,
     download_nflverse_snap_counts,
 )
+from fantasy_draft_ai.data.sources.platform_adp import (
+    import_manual_platform_adp,
+    snapshot_nflverse_ff_playerids,
+    snapshot_sleeper_adp,
+)
 from fantasy_draft_ai.data.warehouse import Warehouse
 from fantasy_draft_ai.draft.repository import DraftRepository
 from fantasy_draft_ai.draft.state import DraftStateError
@@ -244,13 +249,57 @@ def import_espn_adp_command(path: Path) -> None:
     typer.echo(f"Manifest: {result.manifest_path}")
 
 
+@data_app.command("snapshot-sleeper-adp")
+def snapshot_sleeper_adp_command(
+    season: int = typer.Option(2026, min=2000, max=2100),
+    offline: bool = typer.Option(False, help="Reuse the newest matching capture only."),
+) -> None:
+    """Archive the current Sleeper full-PPR redraft ADP response."""
+
+    result = snapshot_sleeper_adp(load_config(), season=season, offline=offline)
+    typer.echo(f"Usable rows: {result.usable_count}")
+    typer.echo(f"Captured at: {result.captured_at.isoformat()}")
+    typer.echo(f"Raw snapshot: {result.raw_path}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"Offline reuse: {result.reused_offline}")
+
+
+@data_app.command("snapshot-platform-player-ids")
+def snapshot_platform_player_ids_command(
+    offline: bool = typer.Option(False, help="Reuse the newest local crosswalk only."),
+) -> None:
+    """Archive nflverse's ESPN/Yahoo/Sleeper-to-GSIS player-ID crosswalk."""
+
+    result = snapshot_nflverse_ff_playerids(load_config(), offline=offline)
+    typer.echo(f"Rows: {result.row_count}")
+    typer.echo(f"Captured at: {result.captured_at.isoformat()}")
+    typer.echo(f"Raw snapshot: {result.raw_path}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"Offline reuse: {result.reused_offline}")
+
+
+@data_app.command("import-platform-adp")
+def import_platform_adp_command(
+    path: Path,
+    source: str = typer.Option(..., help="Authorized source: espn, yahoo, or underdog."),
+) -> None:
+    """Validate and archive one authorized standardized platform ADP CSV."""
+
+    result = import_manual_platform_adp(load_config(), path, source=source)
+    typer.echo(f"Source: {result.source}")
+    typer.echo(f"Usable rows: {result.usable_count}")
+    typer.echo(f"Captured at: {result.captured_at.isoformat()}")
+    typer.echo(f"Raw snapshot: {result.raw_path}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+
+
 @data_app.command("load-adp")
 def load_adp_command(
     manifest: Annotated[
         Path | None,
         typer.Option(
             "--manifest",
-            help="One FFC/ESPN manifest. Defaults to every archived ADP manifest.",
+            help="One supported ADP manifest. Defaults to every archived ADP manifest.",
         ),
     ] = None,
     include_synthetic: Annotated[

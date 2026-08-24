@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from collections import Counter
 from collections.abc import Sequence
+from math import isfinite
 from typing import Any
 
 import pandas as pd
@@ -22,6 +23,7 @@ from fantasy_draft_ai.recommendations.projection_baseline import (
     build_projection_rankings,
     rank_best_available,
 )
+from fantasy_draft_ai.services.draft_auto_pick import simulate_opponents_to_user_turn
 from fantasy_draft_ai.services.draft_room import (
     DraftRoomSession,
     create_draft_session,
@@ -47,6 +49,7 @@ from fantasy_draft_ai.ui.redraft_presets import (
 _DRAFT_ERRORS = (OSError, KeyError, TypeError, ValueError, DraftStateError)
 _QUICK_TEAM_COUNTS = (8, 10, 12, 14, 16)
 _ROSTER_PRESET_KEYS = tuple(preset.key for preset in REDRAFT_ROSTER_PRESETS)
+_EXTREME_RANK_GAP = 12
 
 
 def _set_feedback(kind: str, message: str) -> None:
@@ -257,6 +260,40 @@ def _undo_latest(context: AppContext, session: DraftRoomSession) -> None:
         st.error(f"The latest pick could not be undone: {exc}")
 
 
+def _simulate_to_user_turn(context: AppContext, session: DraftRoomSession) -> None:
+    try:
+        result = simulate_opponents_to_user_turn(
+            context.draft_repository,
+            session.state.session_id,
+            expected_version=session.state.version,
+            engine_config=context.engine_config,
+            command_id=f"assistant-sim-{uuid.uuid4().hex}",
+        )
+        count = len(result.simulated_picks)
+        if count == 0:
+            message = "No opponent picks needed—your team is already on the clock."
+        elif result.session.state.complete:
+            message = f"Simulated {count} opponent picks and completed the draft."
+        else:
+            noun = "pick" if count == 1 else "picks"
+            message = f"Simulated {count} opponent {noun}. You're on the clock."
+        _set_feedback("success", message)
+        st.rerun()
+    except _DRAFT_ERRORS as exc:
+        st.error(f"Opponent picks could not be simulated: {exc}")
+
+
+def _picks_until_user_turn(session: DraftRoomSession) -> int:
+    state = session.state
+    current = state.current_overall_pick
+    if current is None or state.is_user_turn:
+        return 0
+    next_user = state.next_user_pick()
+    if next_user is None:
+        return state.total_picks - current + 1
+    return next_user - current
+
+
 def _render_turn_bar(context: AppContext, session: DraftRoomSession) -> None:
     state = session.state
     round_number = (
@@ -307,8 +344,29 @@ def _render_turn_bar(context: AppContext, session: DraftRoomSession) -> None:
                 width=150,
                 key=f"assistant_undo_{state.session_id}_{state.version}",
             )
+            picks_to_simulate = _picks_until_user_turn(session)
+            sim_clicked = st.button(
+                "Sim to my pick",
+                icon=":material/fast_forward:",
+                type="primary" if picks_to_simulate else "secondary",
+                disabled=picks_to_simulate == 0,
+                help=(
+                    f"Auto-draft {picks_to_simulate} opponent "
+                    f"{'pick' if picks_to_simulate == 1 else 'picks'} using projection value "
+                    "and roster needs."
+                    if picks_to_simulate
+                    else (
+                        "Make your pick first; simulation stops whenever your team is "
+                        "on the clock."
+                    )
+                ),
+                width=150,
+                key=f"assistant_sim_{state.session_id}_{state.version}",
+            )
         if undo_clicked:
             _undo_latest(context, session)
+        if sim_clicked:
+            _simulate_to_user_turn(context, session)
 
 
 def _render_candidate_card(
@@ -333,7 +391,9 @@ def _render_candidate_card(
                 candidate.position,
                 f"{candidate.position}{candidate.position_rank}",
             )
-            st.badge(f"Overall #{candidate.overall_rank}", color="gray")
+            st.badge(f"Experimental model #{candidate.overall_rank}", color="gray")
+            if candidate.current_adp is not None:
+                st.badge(f"Consensus ADP {candidate.current_adp:.1f}", color="green")
             st.badge(f"Tier {candidate.tier}", color="violet")
             if _uses_unvalidated_fallback(session, candidate.player_id):
                 st.badge(
@@ -359,7 +419,7 @@ def _render_candidate_card(
             _record_player(context, session, candidate.player_id, candidate.display_name)
         with st.container(horizontal=True):
             st.metric(
-                "Projected points",
+                "17-game projection",
                 f"{candidate.p50:.1f}",
                 icon=":material/query_stats:",
                 border=True,
@@ -380,7 +440,7 @@ def _render_candidate_card(
                 width=150,
             )
         if primary:
-            st.markdown("**Why the model likes this pick**")
+            st.markdown("**Why this recommendation is competitive**")
             for reason in candidate.reasons[:3]:
                 st.markdown(f"- :material/check_circle: {reason}")
         else:
@@ -530,11 +590,19 @@ def _render_available_players(context: AppContext, session: DraftRoomSession) ->
     if state.complete:
         st.caption("All draft selections are complete; no additional player can be recorded.")
         return
-    rankings = build_projection_rankings(state.rules, session.players)
+    model_rankings = build_projection_rankings(state.rules, session.players)
+    consensus_rankings = _consensus_rankings(model_rankings)
+    rankings = tuple(
+        sorted(
+            model_rankings,
+            key=lambda row: _consensus_sort_key(row, consensus_rankings),
+        )
+    )
     available = [row for row in rankings if row.player_id not in state.selected_player_ids]
     render_section_header(
         "Available players",
-        "Search the board and record the player selected in the room.",
+        "FantasyPros consensus controls the default order; the health-neutral model is a "
+        "secondary comparison.",
         icon=":material/format_list_numbered:",
     )
     owner = "your roster" if state.is_user_turn else state.current_team_id
@@ -574,12 +642,17 @@ def _render_available_players(context: AppContext, session: DraftRoomSession) ->
     records = [
         {
             "Action": action_label,
-            "Rank": row.overall_rank,
+            "Consensus rank": consensus_rankings.get(row.player_id),
             "Player": row.display_name,
             "Pos": row.position,
             "Pos rank": row.position_rank,
-            "Tier": row.tier,
-            "Projection": row.p50,
+            "Experimental model rank": row.overall_rank,
+            "Model vs market": _rank_delta(
+                consensus_rankings.get(row.player_id),
+                row.overall_rank,
+            ),
+            "ADP": row.average_pick,
+            "17-game projection": row.p50,
             "VORP": row.p50_vorp,
         }
         for row in filtered
@@ -611,16 +684,26 @@ def _render_available_players(context: AppContext, session: DraftRoomSession) ->
                     ),
                     key=click_key,
                 ),
-                "Rank": st.column_config.NumberColumn(
+                "Consensus rank": st.column_config.NumberColumn(
                     format="#%d",
                     pinned=True,
                     width="small",
+                    help="Primary board rank derived from the FantasyPros composite ADP.",
                 ),
                 "Player": st.column_config.TextColumn(pinned=True, width="medium"),
                 "Pos": st.column_config.TextColumn(width="small"),
                 "Pos rank": st.column_config.NumberColumn(format="#%d", width="small"),
-                "Tier": st.column_config.NumberColumn(format="%d", width="small"),
-                "Projection": st.column_config.NumberColumn(format="%.1f"),
+                "Experimental model rank": st.column_config.NumberColumn(
+                    format="#%d",
+                    width="small",
+                ),
+                "Model vs market": st.column_config.NumberColumn(
+                    format="%+d",
+                    width="small",
+                    help="Positive means the health-neutral model ranks the player higher.",
+                ),
+                "ADP": st.column_config.NumberColumn(format="%.1f"),
+                "17-game projection": st.column_config.NumberColumn(format="%.1f"),
                 "VORP": st.column_config.NumberColumn(
                     "VORP",
                     format="%+.1f",
@@ -630,10 +713,76 @@ def _render_available_players(context: AppContext, session: DraftRoomSession) ->
         )
     else:
         st.info("No available player matches those filters.", icon=":material/search_off:")
+    extreme_count = sum(
+        abs(delta) >= _EXTREME_RANK_GAP
+        for row in filtered
+        if (
+            delta := _rank_delta(
+                consensus_rankings.get(row.player_id),
+                row.overall_rank,
+            )
+        )
+        is not None
+    )
+    if extreme_count:
+        st.warning(
+            f"{extreme_count:,} shown players have a market/model gap of at least "
+            f"{_EXTREME_RANK_GAP} ranks. Treat the model as a review flag, not permission "
+            "to ignore consensus.",
+            icon=":material/warning:",
+        )
     st.caption(
         f"Showing {len(filtered):,} of {len(available):,} remaining players. The live board "
-        "shows at most 250 matches and uses your league size and roster demand."
+        "shows at most 250 matches, assumes 17 healthy games for every player, and uses your "
+        "league size and roster demand."
     )
+
+
+def _consensus_rankings(rows: Sequence[ProjectionRankingRow]) -> dict[str, int]:
+    """Create deterministic competition ranks from reviewed consensus ADP."""
+
+    usable = sorted(
+        (
+            row
+            for row in rows
+            if row.average_pick is not None
+            and isfinite(row.average_pick)
+            and row.average_pick > 0
+        ),
+        key=lambda row: (
+            row.average_pick if row.average_pick is not None else float("inf"),
+            row.display_name.casefold(),
+            row.player_id,
+        ),
+    )
+    output: dict[str, int] = {}
+    prior_pick: float | None = None
+    prior_rank = 0
+    for ordinal, row in enumerate(usable, start=1):
+        if row.average_pick is None:
+            continue
+        if prior_pick is None or row.average_pick != prior_pick:
+            prior_pick = row.average_pick
+            prior_rank = ordinal
+        output[row.player_id] = prior_rank
+    return output
+
+
+def _consensus_sort_key(
+    row: ProjectionRankingRow,
+    consensus_rankings: dict[str, int],
+) -> tuple[int, int, int, str]:
+    consensus_rank = consensus_rankings.get(row.player_id)
+    return (
+        1 if consensus_rank is None else 0,
+        consensus_rank if consensus_rank is not None else 10**9,
+        row.overall_rank,
+        row.player_id,
+    )
+
+
+def _rank_delta(consensus_rank: int | None, model_rank: int) -> int | None:
+    return None if consensus_rank is None else consensus_rank - model_rank
 
 
 def _draft_board_frames(session: DraftRoomSession) -> tuple[pd.DataFrame, pd.DataFrame, str]:

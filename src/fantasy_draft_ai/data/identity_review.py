@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import unicodedata
 from collections import Counter
@@ -70,6 +71,8 @@ class CanonicalPlayer:
     nfl_team: str | None
     gsis_id: str | None
     espn_id: str | None
+    sleeper_id: str | None
+    yahoo_id: str | None
 
 
 @dataclass(frozen=True)
@@ -194,6 +197,34 @@ def _clean_optional(value: Any) -> str | None:
     return text or None
 
 
+def _platform_identifier(value: object) -> str | None:
+    """Normalize serialized numeric IDs without deriving identity from display text."""
+
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        return str(int(value)) if value.is_integer() else str(value)
+    text = str(value).strip()
+    if not text or text.casefold() in {"nan", "none", "null", "<na>"}:
+        return None
+    numeric_float = re.fullmatch(r"([+-]?\d+)\.0+", text)
+    return numeric_float.group(1) if numeric_float is not None else text
+
+
+def _finite_number(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(str(value))
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def _stable_review_id(issue_type: str, source: str, source_player_id: str) -> str:
     payload = json.dumps(
         [issue_type, source, source_player_id], ensure_ascii=True, separators=(",", ":")
@@ -234,6 +265,10 @@ def refresh_identity_review_queue(
                     observations.extend(_ffc_observations(capture))
                 elif capture.manifest.source == "espn":
                     observations.extend(_espn_observations(capture))
+                elif capture.manifest.source == "sleeper":
+                    observations.extend(_sleeper_observations(capture))
+                elif capture.manifest.source in {"yahoo", "underdog"}:
+                    observations.extend(_generic_platform_observations(capture))
             except (OSError, ValueError, json.JSONDecodeError, duckdb.Error) as exc:
                 issues.append(
                     QualityIssue(
@@ -245,7 +280,15 @@ def refresh_identity_review_queue(
                     )
                 )
 
-    rows = _build_review_rows(observations, players, mappings)
+    observed_platform_keys = {
+        (observation.source, observation.source_player_id)
+        for observation in observations
+        if observation.source in {"espn", "sleeper", "yahoo"}
+    }
+    exact_platform_owners = _load_exact_platform_owners(
+        config, players, issues, observed_platform_keys
+    )
+    rows = _build_review_rows(observations, players, mappings, exact_platform_owners)
     review_id_counts = Counter(str(row["review_id"]) for row in rows)
     duplicate_keys = sum(count - 1 for count in review_id_counts.values() if count > 1)
     if duplicate_keys:
@@ -383,7 +426,7 @@ def _load_manifest_entries(config: AppConfig) -> list[tuple[SourceManifest, Path
 def _latest_captures(config: AppConfig, issues: list[QualityIssue]) -> list[_Capture]:
     entries = _load_manifest_entries(config)
     captures: list[_Capture] = []
-    for source in ("nflverse", "ffc", "espn"):
+    for source in ("nflverse", "ffc", "espn", "sleeper", "yahoo", "underdog"):
         candidates = [entry for entry in entries if entry[0].source == source]
         if source == "nflverse":
             candidates = [
@@ -393,6 +436,8 @@ def _latest_captures(config: AppConfig, issues: list[QualityIssue]) -> list[_Cap
                 and any("nflverse_player_stats__weekly__" in raw for raw in entry[0].raw_files)
             ]
         if not candidates:
+            if source not in {"nflverse", "ffc", "espn"}:
+                continue
             issues.append(
                 QualityIssue(
                     code=f"{source}_capture_unavailable",
@@ -449,7 +494,8 @@ def _verify_capture(
 
 def _load_players(connection: duckdb.DuckDBPyConnection) -> list[CanonicalPlayer]:
     rows = connection.execute(
-        "SELECT player_id, display_name, canonical_position, nfl_team, gsis_id, espn_id "
+        "SELECT player_id, display_name, canonical_position, nfl_team, gsis_id, espn_id, "
+        "sleeper_id, yahoo_id "
         "FROM players"
     ).fetchall()
     return [
@@ -460,9 +506,139 @@ def _load_players(connection: duckdb.DuckDBPyConnection) -> list[CanonicalPlayer
             _clean_optional(row[3]),
             _clean_optional(row[4]),
             _clean_optional(row[5]),
+            _clean_optional(row[6]),
+            _clean_optional(row[7]),
         )
         for row in rows
     ]
+
+
+def _load_exact_platform_owners(
+    config: AppConfig,
+    players: list[CanonicalPlayer],
+    issues: list[QualityIssue],
+    observed_keys: set[tuple[str, str]],
+) -> dict[tuple[str, str], str]:
+    """Load exact owners for observed IDs and fail closed only when one is ambiguous."""
+
+    owners: dict[tuple[str, str], str] = {}
+    players_by_gsis: dict[str, set[str]] = {}
+    for player in players:
+        gsis_id = _platform_identifier(player.gsis_id)
+        if gsis_id is not None:
+            players_by_gsis.setdefault(gsis_id, set()).add(player.player_id)
+        for source, source_id in (
+            ("espn", player.espn_id),
+            ("sleeper", player.sleeper_id),
+            ("yahoo", player.yahoo_id),
+        ):
+            normalized_id = _platform_identifier(source_id)
+            if normalized_id is not None and (source, normalized_id) in observed_keys:
+                _register_platform_owner(
+                    owners, source, normalized_id, player.player_id, issues
+                )
+
+    entries = [
+        entry
+        for entry in _load_manifest_entries(config)
+        if entry[0].source == "nflverse_ff_playerids"
+    ]
+    if not entries or any(issue.severity == Severity.FATAL for issue in issues):
+        return owners
+    manifest, _ = max(entries, key=lambda item: (item[0].acquired_at, item[0].dataset_id))
+    raw_paths = _verify_capture(config, manifest, issues)
+    if raw_paths is None:
+        return owners
+    parquet_paths = [path for path in raw_paths if path.suffix.lower() == ".parquet"]
+    if len(parquet_paths) != 1:
+        issues.append(
+            QualityIssue(
+                code="invalid_ff_playerids_capture",
+                message=(
+                    "The latest nflverse fantasy-ID crosswalk must contain exactly one "
+                    "Parquet file."
+                ),
+                severity=Severity.FATAL,
+            )
+        )
+        return owners
+    try:
+        with duckdb.connect() as connection:
+            rows = connection.execute(
+                "SELECT gsis_id, espn_id, sleeper_id, yahoo_id FROM read_parquet(?)",
+                [str(parquet_paths[0])],
+            ).fetchall()
+    except duckdb.Error as exc:
+        issues.append(
+            QualityIssue(
+                code="invalid_ff_playerids_capture",
+                message=f"Could not read the latest nflverse fantasy-ID crosswalk: {exc}",
+                severity=Severity.FATAL,
+            )
+        )
+        return owners
+
+    for gsis_value, espn_value, sleeper_value, yahoo_value in rows:
+        observed_source_ids = [
+            (source, normalized_id)
+            for source, value in (
+                ("espn", espn_value),
+                ("sleeper", sleeper_value),
+                ("yahoo", yahoo_value),
+            )
+            if (normalized_id := _platform_identifier(value)) is not None
+            and (source, normalized_id) in observed_keys
+        ]
+        if not observed_source_ids:
+            continue
+        gsis_id = _platform_identifier(gsis_value)
+        canonical_owners = players_by_gsis.get(gsis_id or "", set())
+        if not canonical_owners:
+            continue
+        if len(canonical_owners) != 1:
+            owner_text = ", ".join(sorted(canonical_owners))
+            for source, source_id in observed_source_ids:
+                issues.append(
+                    QualityIssue(
+                        code="platform_identity_collision",
+                        message=(
+                            f"Observed {source}:{source_id} points to ambiguous GSIS ID "
+                            f"{gsis_id} owned by {owner_text}."
+                        ),
+                        severity=Severity.FATAL,
+                    )
+                )
+            continue
+        player_id = next(iter(canonical_owners))
+        for source, source_id in observed_source_ids:
+            _register_platform_owner(owners, source, source_id, player_id, issues)
+    return owners
+
+
+def _register_platform_owner(
+    owners: dict[tuple[str, str], str],
+    source: str,
+    source_player_id: object,
+    player_id: str,
+    issues: list[QualityIssue],
+) -> None:
+    normalized_id = _platform_identifier(source_player_id)
+    if normalized_id is None:
+        return
+    key = (source, normalized_id)
+    prior = owners.get(key)
+    if prior is not None and prior != player_id:
+        issues.append(
+            QualityIssue(
+                code="platform_identity_collision",
+                message=(
+                    f"{source}:{normalized_id} belongs to both {prior} and {player_id}."
+                ),
+                severity=Severity.FATAL,
+            )
+        )
+        return
+    owners[key] = player_id
 
 
 def _load_source_mappings(
@@ -663,6 +839,8 @@ def _espn_observations(capture: _Capture) -> list[SourceObservation]:
     if len(csv_paths) != 1:
         raise ValueError("The selected ESPN manifest must contain one CSV capture.")
     frame = pd.read_csv(csv_paths[0], dtype="string", keep_default_na=False)
+    if "source_player_id" in frame.columns:
+        return _generic_platform_observations(capture, frame=frame)
     observations: list[SourceObservation] = []
     raw_hash = capture.manifest.sha256[0]
     for index, row in frame.iterrows():
@@ -688,13 +866,130 @@ def _espn_observations(capture: _Capture) -> list[SourceObservation]:
     return observations
 
 
+def _sleeper_observations(capture: _Capture) -> list[SourceObservation]:
+    json_paths = [path for path in capture.raw_paths if path.suffix.lower() == ".json"]
+    if len(json_paths) != 1:
+        raise ValueError("The selected Sleeper manifest must contain one JSON capture.")
+    payload = json.loads(json_paths[0].read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("Sleeper capture does not contain a projections list.")
+    observations: list[SourceObservation] = []
+    raw_hash = capture.manifest.sha256[0]
+    for index, raw in enumerate(payload):
+        if not isinstance(raw, dict):
+            continue
+        player = raw.get("player")
+        if not isinstance(player, dict):
+            continue
+        source_id = _platform_identifier(raw.get("player_id") or player.get("player_id"))
+        position = _clean_optional(player.get("position"))
+        stats = raw.get("stats")
+        adp = _finite_number(stats.get("adp_ppr")) if isinstance(stats, dict) else None
+        if (
+            source_id is None
+            or _normalize_position(position) not in {"QB", "RB", "WR", "TE"}
+            or adp is None
+            or not 1.0 <= adp < 900.0
+        ):
+            continue
+        full_name = _clean_optional(player.get("full_name"))
+        if full_name is None:
+            name_parts = [
+                value
+                for value in (
+                    _clean_optional(player.get("first_name")),
+                    _clean_optional(player.get("last_name")),
+                )
+                if value is not None
+            ]
+            full_name = " ".join(name_parts) or "<missing name>"
+        team = _clean_optional(player.get("team"))
+        observations.append(
+            SourceObservation(
+                issue_type="source_mapping",
+                source="sleeper",
+                source_player_id=source_id,
+                display_name=full_name,
+                position=position,
+                nfl_team=team,
+                dataset_id=capture.manifest.dataset_id,
+                observed_at=capture.manifest.acquired_at,
+                evidence={
+                    "raw_source_row_id": source_id,
+                    "raw_sha256": raw_hash,
+                    "rank": raw.get("rank") or index + 1,
+                    "average_pick": adp,
+                },
+            )
+        )
+    return observations
+
+
+def _generic_platform_observations(
+    capture: _Capture,
+    *,
+    frame: pd.DataFrame | None = None,
+) -> list[SourceObservation]:
+    csv_paths = [path for path in capture.raw_paths if path.suffix.lower() == ".csv"]
+    if len(csv_paths) != 1:
+        raise ValueError(
+            f"The selected {capture.manifest.source} manifest must contain one CSV capture."
+        )
+    if frame is None:
+        frame = pd.read_csv(csv_paths[0], dtype="string", keep_default_na=False)
+    required = {"source_player_id", "player_name", "position"}
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise ValueError(
+            f"{capture.manifest.source} capture is missing identity columns: "
+            + ", ".join(missing)
+        )
+    observations: list[SourceObservation] = []
+    raw_hash = capture.manifest.sha256[0]
+    for row_number, (_, row) in enumerate(frame.iterrows(), start=2):
+        source_value = _clean_optional(row.get("source"))
+        if source_value is not None and source_value.casefold() != capture.manifest.source:
+            raise ValueError(
+                f"CSV row {row_number} names source {source_value!r}, not "
+                f"{capture.manifest.source!r}."
+            )
+        source_id = _platform_identifier(row.get("source_player_id"))
+        if source_id is None:
+            raise ValueError(f"CSV row {row_number} has no stable source_player_id.")
+        position = _clean_optional(row.get("position"))
+        excluded = _normalize_position(position) == "DEF"
+        observations.append(
+            SourceObservation(
+                issue_type="unsupported_team_defense" if excluded else "source_mapping",
+                source=capture.manifest.source,
+                source_player_id=source_id,
+                display_name=_clean_optional(row.get("player_name")) or "<missing name>",
+                position=position,
+                nfl_team=_clean_optional(row.get("nfl_team")),
+                dataset_id=capture.manifest.dataset_id,
+                observed_at=capture.manifest.acquired_at,
+                evidence={
+                    "raw_source_row_id": source_id,
+                    "raw_sha256": raw_hash,
+                    "rank": _clean_optional(row.get("rank")),
+                    "average_pick": _clean_optional(row.get("average_pick")),
+                    "captured_at": _clean_optional(row.get("captured_at")),
+                    "scoring_format": _clean_optional(row.get("scoring_format")),
+                    "team_count": _clean_optional(row.get("team_count")),
+                },
+                excluded=excluded,
+            )
+        )
+    return observations
+
+
 def _build_review_rows(
     observations: list[SourceObservation],
     players: list[CanonicalPlayer],
     mappings: dict[tuple[str, str], str],
+    exact_platform_owners: dict[tuple[str, str], str],
 ) -> list[dict[str, Any]]:
     players_by_id = {player.player_id: player for player in players}
-    espn_ids = {player.espn_id: player for player in players if player.espn_id is not None}
     strict_names: dict[str, list[CanonicalPlayer]] = {}
     suffix_names: dict[str, list[CanonicalPlayer]] = {}
     for player in players:
@@ -719,8 +1014,10 @@ def _build_review_rows(
             candidate = players_by_id.get(observation.forced_candidate_id)
             confidence = MappingConfidence.HIGH
             reason = observation.forced_reason or "stable_id_conflict"
-        elif observation.source == "espn" and observation.source_player_id in espn_ids:
-            candidate = espn_ids[observation.source_player_id]
+        elif exact_player_id := exact_platform_owners.get(
+            (observation.source, observation.source_player_id)
+        ):
+            candidate = players_by_id[exact_player_id]
             confidence = MappingConfidence.EXACT
             status = IdentityReviewStatus.RESOLVED
             reason = "exact_platform_id"
@@ -1079,12 +1376,22 @@ def _validate_override_targets(warehouse: Warehouse, decided: pd.DataFrame) -> l
                 "SELECT source, source_player_id, player_id FROM player_source_mappings"
             ).fetchall()
         }
-        espn_owners = {
-            str(row[0]): str(row[1])
-            for row in connection.execute(
-                "SELECT espn_id, player_id FROM players WHERE espn_id IS NOT NULL"
-            ).fetchall()
-        }
+        platform_owners: dict[tuple[str, str], str] = {}
+        for player_id, espn_id, sleeper_id, yahoo_id in connection.execute(
+            "SELECT player_id, espn_id, sleeper_id, yahoo_id FROM players"
+        ).fetchall():
+            for platform, raw_source_id in (
+                ("espn", espn_id),
+                ("sleeper", sleeper_id),
+                ("yahoo", yahoo_id),
+            ):
+                _register_platform_owner(
+                    platform_owners,
+                    platform,
+                    raw_source_id,
+                    str(player_id),
+                    issues,
+                )
     queue = {str(row[0]): row for row in queue_rows}
     for _, row in decided.iterrows():
         review_id = str(row["review_id"])
@@ -1190,13 +1497,16 @@ def _validate_override_targets(warehouse: Warehouse, decided: pd.DataFrame) -> l
                         severity=Severity.FATAL,
                     )
                 )
-            if source == "espn":
-                owner = espn_owners.get(source_player_id)
+            if source in {"espn", "sleeper", "yahoo"}:
+                owner = platform_owners.get((source, source_player_id))
                 if owner is not None and owner != player_id:
                     issues.append(
                         QualityIssue(
                             code="platform_id_collision",
-                            message=f"ESPN ID {source_player_id} already belongs to {owner}.",
+                            message=(
+                                f"{source.title()} ID {source_player_id} already belongs "
+                                f"to {owner}."
+                            ),
                             severity=Severity.FATAL,
                         )
                     )
@@ -1365,14 +1675,26 @@ def _commit_overrides(
                 "SELECT count(*) FROM player_source_mappings m LEFT JOIN players p "
                 "ON m.player_id = p.player_id WHERE p.player_id IS NULL"
             ).fetchone()
-            duplicate_espn = connection.execute(
-                "SELECT count(*) FROM (SELECT espn_id FROM players WHERE espn_id IS NOT NULL "
-                "GROUP BY espn_id HAVING count(*) > 1)"
-            ).fetchone()
+            duplicate_platform_ids = connection.execute(
+                """
+                SELECT count(*) FROM (
+                    SELECT 'espn' AS source, espn_id AS source_player_id
+                    FROM players WHERE espn_id IS NOT NULL
+                    UNION ALL
+                    SELECT 'sleeper', sleeper_id
+                    FROM players WHERE sleeper_id IS NOT NULL
+                    UNION ALL
+                    SELECT 'yahoo', yahoo_id
+                    FROM players WHERE yahoo_id IS NOT NULL
+                )
+                GROUP BY source, source_player_id
+                HAVING count(*) > 1
+                """
+            ).fetchall()
             if orphan_count is None or int(orphan_count[0]):
                 raise RuntimeError("Identity override created an orphan player mapping.")
-            if duplicate_espn is None or int(duplicate_espn[0]):
-                raise RuntimeError("Identity override created a duplicate ESPN ID.")
+            if duplicate_platform_ids:
+                raise RuntimeError("Identity override created a duplicate platform ID.")
             connection.execute("COMMIT")
         except Exception:
             connection.execute("ROLLBACK")
@@ -1538,9 +1860,15 @@ def _apply_player_resolution(
     canonical_name: str | None,
     mapping_source: str,
 ) -> None:
-    if source == "espn":
+    platform_column = {
+        "espn": "espn_id",
+        "sleeper": "sleeper_id",
+        "yahoo": "yahoo_id",
+    }.get(source)
+    if platform_column is not None:
         connection.execute(
-            "UPDATE players SET espn_id = coalesce(espn_id, ?) WHERE player_id = ?",
+            f"UPDATE players SET {platform_column} = coalesce({platform_column}, ?) "
+            "WHERE player_id = ?",
             [source_player_id, player_id],
         )
     if source == "nflverse" or canonical_name is not None:
@@ -1557,9 +1885,9 @@ def _apply_player_resolution(
     connection.execute(
         """
         UPDATE adp_snapshots SET player_id = ?, mapping_confidence = 'reviewed'
-        WHERE source = ? AND raw_source_row_id = ?
+        WHERE lower(source) = ? AND raw_source_row_id = ?
         """,
-        [player_id, source, source_player_id],
+        [player_id, source.lower(), source_player_id],
     )
     connection.execute(
         """

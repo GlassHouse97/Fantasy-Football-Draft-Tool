@@ -2,11 +2,11 @@
 
 Status: **PASSED**
 
-Feature fingerprint: `d2bdda170fcbf88ccfe0b3f437615583a0684057eebe1fc12aa65463a47cf9cf`
+Feature fingerprint: `965c7775f8fc4a64b0040bb666ebecdbb962462d35dddecccf87121ce227a4f1`
 
-Target fingerprint: `dd759bbf87c146884e68425079b3a759d1d6d4bb434d5bccee6d9d91c98c56a9`
+Target fingerprint: `1dede9747fde400fe80ffd0302ab71ecf1231de7832f6006cf3482f6d733cfea`
 
-Build fingerprint: `f195dcb17a1a386b2f2003d87a06921550235cbec62aecd0f4eda419aa664cd7`
+Build fingerprint: `d4a02828f7ea38f180320b0c98458127a758bc167a377ea67faf86352e60870e`
 
 Prediction rows: 167,565
 
@@ -43,7 +43,7 @@ Sparse/entry fallback player-seasons: 2,770
 |---|---|---:|---:|---:|---:|---:|
 | fantasy_points_per_game | previous_season | 3102 | 2.855 | 3.994 | 2.082 | 0.718329 |
 | fantasy_points_per_game | weighted_history | 3102 | 2.683 | 3.768 | 1.869 | 0.749172 |
-| fantasy_points_per_game | age_position_adjusted | 3102 | 2.581 | 3.643 | 1.784 | 0.753173 |
+| fantasy_points_per_game | age_position_adjusted | 3102 | 2.616 | 3.684 | 1.815 | 0.752227 |
 | fantasy_points_per_game | position_shrinkage | 3102 | 2.793 | 3.637 | 2.181 | 0.740834 |
 | fantasy_points_per_game | weighted_components | 3102 | 2.683 | 3.768 | 1.869 | 0.749173 |
 | games_active | previous_season | 6446 | 6.946 | 8.297 | 8.000 | 0.410308 |
@@ -53,7 +53,7 @@ Sparse/entry fallback player-seasons: 2,770
 | games_active | weighted_components | 6446 | 5.923 | 7.450 | 5.000 | 0.495209 |
 | fantasy_points_total | previous_season | 6464 | 45.147 | 58.763 | 42.500 | 0.378813 |
 | fantasy_points_total | weighted_history | 6464 | 35.440 | 53.297 | 22.473 | 0.539006 |
-| fantasy_points_total | age_position_adjusted | 6464 | 33.324 | 50.273 | 21.383 | 0.551965 |
+| fantasy_points_total | age_position_adjusted | 6464 | 33.919 | 51.100 | 21.581 | 0.549862 |
 | fantasy_points_total | position_shrinkage | 6464 | 43.467 | 54.182 | 37.245 | 0.479153 |
 | fantasy_points_total | weighted_components | 6464 | 35.440 | 53.297 | 22.473 | 0.539011 |
 
@@ -65,7 +65,7 @@ This diagnostic conditions on recording at least one active game; candidate sele
 |---|---|---:|---:|---:|---:|---:|
 | fantasy_points_per_game | previous_season | 3102 | 2.855 | 3.994 | 2.082 | 0.718329 |
 | fantasy_points_per_game | weighted_history | 3102 | 2.683 | 3.768 | 1.869 | 0.749172 |
-| fantasy_points_per_game | age_position_adjusted | 3102 | 2.581 | 3.643 | 1.784 | 0.753173 |
+| fantasy_points_per_game | age_position_adjusted | 3102 | 2.616 | 3.684 | 1.815 | 0.752227 |
 | fantasy_points_per_game | position_shrinkage | 3102 | 2.793 | 3.637 | 2.181 | 0.740834 |
 | fantasy_points_per_game | weighted_components | 3102 | 2.683 | 3.768 | 1.869 | 0.749173 |
 | games_active | previous_season | 3102 | 4.008 | 5.456 | 3.000 | 0.434938 |
@@ -75,7 +75,7 @@ This diagnostic conditions on recording at least one active game; candidate sele
 | games_active | weighted_components | 3102 | 3.754 | 5.053 | 2.750 | 0.463431 |
 | fantasy_points_total | previous_season | 3102 | 43.760 | 63.806 | 30.000 | 0.704217 |
 | fantasy_points_total | weighted_history | 3102 | 41.222 | 59.960 | 26.534 | 0.740475 |
-| fantasy_points_total | age_position_adjusted | 3102 | 39.872 | 58.049 | 25.716 | 0.744669 |
+| fantasy_points_total | age_position_adjusted | 3102 | 40.320 | 58.734 | 26.009 | 0.743442 |
 | fantasy_points_total | position_shrinkage | 3102 | 42.861 | 58.198 | 30.809 | 0.724763 |
 | fantasy_points_total | weighted_components | 3102 | 41.222 | 59.960 | 26.534 | 0.740477 |
 

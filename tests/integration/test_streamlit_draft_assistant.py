@@ -5,7 +5,6 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 from fantasy_draft_ai.draft.repository import DraftRepository
-from fantasy_draft_ai.services.draft_room import record_draft_pick
 
 
 def test_quick_start_recommend_pick_and_undo_with_unmapped_market(tmp_path: Path) -> None:
@@ -25,7 +24,7 @@ from fantasy_draft_ai.scoring.engine import ScoringRules
 from fantasy_draft_ai.services.adp_market import AdpMarketBoard, AdpMarketStatus
 from fantasy_draft_ai.services.league_setup import LeagueSetupRepository
 from fantasy_draft_ai.services.projections import (
-    TARGET_FANTASY_POINTS_TOTAL,
+    TARGET_FANTASY_POINTS_PER_GAME,
     PlayerProjection,
     ProjectionBoard,
     ProjectionBoardStatus,
@@ -74,10 +73,10 @@ for position, base in (("QB", 330), ("RB", 300), ("WR", 295), ("TE", 230)):
                     else "learned_models_validated"
                 ),
                 targets={{
-                    TARGET_FANTASY_POINTS_TOTAL: ProjectionInterval(
-                        p10=p50 - 20,
-                        p50=p50,
-                        p90=p50 + 20,
+                    TARGET_FANTASY_POINTS_PER_GAME: ProjectionInterval(
+                        p10=(p50 - 20) / 17,
+                        p50=p50 / 17,
+                        p90=(p50 + 20) / 17,
                         selected_source="learned",
                         selected_name="test-model",
                     )
@@ -231,22 +230,14 @@ st.write(st.session_state[search_key])
 
     app = app.run()
     assert any("Pick 3 · Team 3" in markdown.value for markdown in app.markdown)
-    while not (state := repository.verify_session(session_id)).is_user_turn:
-        next_player = next(
-            player
-            for player in repository.load_players(session_id)
-            if player.player_id not in state.selected_player_ids
-        )
-        record_draft_pick(
-            repository,
-            session_id,
-            next_player.player_id,
-            expected_version=state.version,
-            command_id=f"integration-opponent-{state.version}",
-        )
-
+    sim_button = next(button for button in app.button if button.label == "Sim to my pick")
+    assert not sim_button.disabled
+    app = sim_button.click().run(timeout=60)
+    state = repository.verify_session(session_id)
     assert state.current_overall_pick == 24
-    app = app.run()
+    assert [pick.overall_pick for pick in state.picks[-21:]] == list(range(3, 24))
+    assert all(pick.draft_slot != 1 for pick in state.picks[-21:])
+    assert len(app.exception) == 0
     assert any("Best pick now" in markdown.value for markdown in app.markdown)
 
     for expected_pick in (24, 25):

@@ -7,6 +7,7 @@ from typing import Any, cast
 import pandas as pd
 import pytest
 
+from fantasy_draft_ai.models.player_projection.config import DraftRelevancePolicy
 from fantasy_draft_ai.models.player_projection.evaluation import (
     assign_projection_tiers,
     interval_metrics,
@@ -277,6 +278,149 @@ def test_champion_selection_rejects_unmatched_validation_samples() -> None:
             required_learned_models=("ridge", "hist_gradient_boosting"),
             n_bootstrap=20,
         )
+
+
+def test_draft_relevant_selection_rejects_a_pooled_mae_winner_on_the_fixed_cohort() -> None:
+    result = _select_draft_relevant_champion(
+        baseline_predictions=(99.0, 80.0, 20.0),
+        learned_predictions=(90.0, 90.0, 0.0),
+    )
+
+    champion = cast(dict[str, Any], result["champions"][0])
+    assert champion["selected_source"] == "baseline"
+    assert champion["decision_status"] == (
+        "learned_draft_relevant_regression_baseline_retained"
+    )
+    assert champion["learned_has_lower_validation_mae"] is True
+    assert champion["learned_has_lower_draft_relevant_mae"] is False
+    assert champion["selection_metric"] == (
+        "draft_relevant_validation_mae_with_pooled_safety_gate"
+    )
+    assert champion["reference_baseline_value"] == 1.0
+    assert champion["best_learned_value"] == 10.0
+
+
+def test_draft_relevant_selection_enforces_the_pooled_mae_safety_gate() -> None:
+    result = _select_draft_relevant_champion(
+        baseline_predictions=(91.0, 90.0, 0.0),
+        learned_predictions=(99.0, 40.0, 50.0),
+    )
+
+    champion = cast(dict[str, Any], result["champions"][0])
+    assert champion["selected_source"] == "baseline"
+    assert champion["learned_has_lower_draft_relevant_mae"] is True
+    assert champion["bootstrap_ci_supports_learned"] is True
+    assert champion["pooled_mae_safety_gate_passed"] is False
+    assert champion["decision_status"] == (
+        "learned_pooled_mae_safety_gate_failed_baseline_retained"
+    )
+
+
+def test_draft_relevant_total_selection_enforces_the_top_n_capture_guard() -> None:
+    result = _select_draft_relevant_champion(
+        baseline_predictions=(80.0, 70.0, 0.0),
+        learned_predictions=(90.0, 95.0, 0.0),
+    )
+
+    champion = cast(dict[str, Any], result["champions"][0])
+    assert champion["selected_source"] == "baseline"
+    assert champion["learned_has_lower_draft_relevant_mae"] is True
+    assert champion["pooled_mae_safety_gate_passed"] is True
+    assert champion["reference_baseline_top_n_capture_rate"] == 1.0
+    assert champion["best_learned_top_n_capture_rate"] == 0.0
+    assert champion["total_top_n_capture_guard_passed"] is False
+    assert champion["decision_status"] == (
+        "learned_total_capture_guard_failed_baseline_retained"
+    )
+
+
+def test_draft_relevant_selection_promotes_a_candidate_that_clears_every_gate() -> None:
+    result = _select_draft_relevant_champion(
+        baseline_predictions=(90.0, 70.0, 0.0),
+        learned_predictions=(98.0, 80.0, 0.0),
+    )
+
+    champion = cast(dict[str, Any], result["champions"][0])
+    assert champion["selected_source"] == "learned"
+    assert champion["decision_status"] == "learned_draft_relevant_improvement_selected"
+    assert champion["bootstrap_ci_supports_learned"] is True
+    assert champion["pooled_mae_safety_gate_passed"] is True
+    assert champion["total_top_n_capture_guard_passed"] is True
+    assert result["draft_relevance_policy"] == {
+        "anchor_target": "fantasy_points_total",
+        "anchor_baseline": "weighted_components",
+        "top_n_by_position": {"RB": 1},
+        "pooled_mae_regression_tolerance": 0.05,
+        "max_total_top_n_capture_regression": 0.05,
+    }
+
+
+def test_draft_relevant_selection_fails_closed_without_the_anchor_baseline() -> None:
+    rows = _draft_relevance_fixture(
+        baseline_predictions=(90.0, 70.0, 0.0),
+        learned_predictions=(98.0, 80.0, 0.0),
+    )
+    for row in rows:
+        if row["candidate_source"] == "baseline":
+            row["candidate_name"] = "other_baseline"
+
+    with pytest.raises(ValueError, match="requires the cutoff-safe anchor"):
+        select_champions(
+            rows,
+            required_baselines=("other_baseline",),
+            required_learned_models=("ridge",),
+            n_bootstrap=50,
+            draft_relevance_policy=_draft_relevance_policy(),
+        )
+
+
+def _draft_relevance_policy() -> DraftRelevancePolicy:
+    return DraftRelevancePolicy(top_n_by_position=(("RB", 1),))
+
+
+def _select_draft_relevant_champion(
+    *,
+    baseline_predictions: tuple[float, float, float],
+    learned_predictions: tuple[float, float, float],
+) -> dict[str, Any]:
+    return select_champions(
+        _draft_relevance_fixture(
+            baseline_predictions=baseline_predictions,
+            learned_predictions=learned_predictions,
+        ),
+        required_baselines=("weighted_components",),
+        required_learned_models=("ridge",),
+        n_bootstrap=200,
+        draft_relevance_policy=_draft_relevance_policy(),
+    )
+
+
+def _draft_relevance_fixture(
+    *,
+    baseline_predictions: tuple[float, float, float],
+    learned_predictions: tuple[float, float, float],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    players = (("star", 100.0), ("challenger", 90.0), ("depth", 0.0))
+    for season in range(2020, 2026):
+        for player_index, (player_id, actual) in enumerate(players):
+            for source, candidate, predictions in (
+                ("baseline", "weighted_components", baseline_predictions),
+                ("learned", "ridge", learned_predictions),
+            ):
+                rows.append(
+                    {
+                        "prediction_season": season,
+                        "position": "RB",
+                        "target_name": "fantasy_points_total",
+                        "candidate_source": source,
+                        "candidate_name": candidate,
+                        "player_id": player_id,
+                        "actual_value": actual,
+                        "predicted_value": predictions[player_index],
+                    }
+                )
+    return rows
 
 
 def _champion_fixture() -> list[dict[str, Any]]:

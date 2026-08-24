@@ -232,23 +232,15 @@ def _render_adp_actions(context: AppContext) -> None:
             parameters["position"] = position
         _execute_action(context, "snapshot_ffc_adp", parameters)
 
-    uploaded = st.file_uploader(
-        "Upload ESPN ADP CSV",
-        type=("csv",),
-        help="The selected file is validated, hashed, and copied into the immutable archive.",
+    st.info(
+        "To update Yahoo, Sleeper, RT Sports, and FantasyPros AVG, export the Overall ADP "
+        "CSV from your FantasyPros account and open Player Evaluation → Player Export List. "
+        "The single uploader at the bottom recognizes Rank, Player (Bye), POS, Yahoo, "
+        "Sleeper, RTSports, and AVG, then validates and imports the file locally. The "
+        "optional Real-Time column is ignored. FantasyPros credentials and cookies are "
+        "never stored.",
+        icon=":material/upload_file:",
     )
-    if st.button("Validate and archive ESPN CSV", disabled=uploaded is None):
-        if uploaded is None:
-            return
-        temporary_path: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as handle:
-                handle.write(uploaded.getvalue())
-                temporary_path = Path(handle.name)
-            _execute_action(context, "import_espn_csv", {"path": temporary_path})
-        finally:
-            if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
 
 
 def _render_league_imports(context: AppContext, snapshot: DataCenterSnapshot) -> None:

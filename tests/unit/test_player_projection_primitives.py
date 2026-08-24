@@ -6,8 +6,11 @@ import pytest
 
 from fantasy_draft_ai.models.player_projection.config import (
     DEFAULT_NUMERIC_FEATURES,
+    FEATURE_CONTRACT_VERSION,
     HIST_GRADIENT_BOOSTING,
+    PLAYER_MODEL_VERSION,
     RIDGE,
+    DraftRelevancePolicy,
     HistGradientBoostingGridPoint,
     PlayerModelConfig,
     build_run_fingerprint,
@@ -109,6 +112,10 @@ def test_config_and_run_fingerprints_are_deterministic_and_reject_unsafe_feature
 
     assert config.fingerprint() == _compact_config().fingerprint()
     assert config.feature_contract_fingerprint() == _compact_config().feature_contract_fingerprint()
+    assert PLAYER_MODEL_VERSION == "phase4-player-models-v3"
+    assert FEATURE_CONTRACT_VERSION == "phase4-player-features-v2"
+    assert "age_at_cutoff" in config.numeric_features
+    assert "age_adjustment_factor" not in config.numeric_features
     assert build_run_fingerprint(config, **kwargs) == build_run_fingerprint(config, **kwargs)
     assert build_run_fingerprint(config, **kwargs) != build_run_fingerprint(
         config, **(kwargs | {"baseline_report_fingerprint": "new-baselines"})
@@ -123,8 +130,35 @@ def test_config_and_run_fingerprints_are_deterministic_and_reject_unsafe_feature
         PlayerModelConfig(
             numeric_features=(*DEFAULT_NUMERIC_FEATURES, "candidate_selection_reason")
         )
+    with pytest.raises(ValueError, match="both raw age and the derived age adjustment"):
+        PlayerModelConfig(
+            numeric_features=(*DEFAULT_NUMERIC_FEATURES, "age_adjustment_factor")
+        )
     with pytest.raises(ValueError, match=r"exactly .*P10/P50/P90"):
         PlayerModelConfig(interval_quantiles=(0.05, 0.50, 0.95))
+
+
+def test_draft_relevance_policy_changes_the_model_run_fingerprint() -> None:
+    config = _compact_config()
+    changed = PlayerModelConfig(
+        ridge_alphas=config.ridge_alphas,
+        hgb_grid=config.hgb_grid,
+        max_inner_validation_seasons=config.max_inner_validation_seasons,
+        draft_relevance_policy=DraftRelevancePolicy(
+            pooled_mae_regression_tolerance=0.10
+        ),
+    )
+    kwargs = {
+        "feature_data_fingerprint": "feature",
+        "target_data_fingerprint": "target",
+        "build_fingerprint": "build",
+        "scoring_ruleset_fingerprint": "rules",
+        "baseline_report_fingerprint": "baselines",
+    }
+
+    assert config.feature_contract_fingerprint() == changed.feature_contract_fingerprint()
+    assert config.fingerprint() != changed.fingerprint()
+    assert build_run_fingerprint(config, **kwargs) != build_run_fingerprint(changed, **kwargs)
 
 
 def test_dataset_uses_allowlist_routes_position_masks_targets_and_never_trains_rookies() -> None:

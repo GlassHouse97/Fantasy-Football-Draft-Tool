@@ -379,6 +379,26 @@ def test_evaluation_report_is_deterministic_and_timestamp_independent(tmp_path: 
     assert evaluation_report_fingerprint(changed_timestamp) == first["report_fingerprint"]
 
 
+def test_evaluation_report_labels_draft_relevant_selection_metric(tmp_path: Path) -> None:
+    payload = {
+        **_evaluation_payload(),
+        "selection_metric": "draft_relevant_validation_mae_with_pooled_safety_gate",
+    }
+
+    written = write_evaluation_report(
+        tmp_path,
+        payload,
+        json_path="docs/phase4.json",
+        markdown_path="docs/phase4.md",
+    )
+
+    markdown = (tmp_path / written["markdown_path"]).read_text(encoding="utf-8")
+    assert "Draft-relevant validation MAE" in markdown
+    assert "Draft-relevant baseline MAE" in markdown
+    assert "Draft-relevant learned MAE" in markdown
+    assert "Draft-relevant MAE improvement" in markdown
+
+
 def test_report_payload_rejects_non_json_values_and_escaping_paths(tmp_path: Path) -> None:
     with pytest.raises(ReportingPayloadError, match="JSON-safe"):
         write_evaluation_report(
