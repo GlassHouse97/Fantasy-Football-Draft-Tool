@@ -20,6 +20,8 @@ from fantasy_draft_ai.services.adp_market import (
     AdpMarketStatus,
 )
 from fantasy_draft_ai.services.draft_room import (
+    DRAFT_FULL_SEASON_GAMES,
+    HEALTH_NEUTRAL_PROJECTION_SOURCE,
     IDENTITY_MAPPING_REQUIRED,
     RECOMMENDATION_READY,
     DraftRoomServiceError,
@@ -32,7 +34,9 @@ from fantasy_draft_ai.services.draft_room import (
     undo_draft_pick,
 )
 from fantasy_draft_ai.services.projections import (
+    TARGET_FANTASY_POINTS_PER_GAME,
     TARGET_FANTASY_POINTS_TOTAL,
+    TARGET_GAMES_ACTIVE,
     PlayerProjection,
     ProjectionBoard,
     ProjectionBoardStatus,
@@ -105,6 +109,20 @@ def _projection(
         position=position,
         prediction_status="learned",
         targets={
+            TARGET_FANTASY_POINTS_PER_GAME: ProjectionInterval(
+                p10=p10 / DRAFT_FULL_SEASON_GAMES,
+                p50=p50 / DRAFT_FULL_SEASON_GAMES,
+                p90=p90 / DRAFT_FULL_SEASON_GAMES,
+                selected_source="learned",
+                selected_name="histogram_gradient_boosting",
+            ),
+            TARGET_GAMES_ACTIVE: ProjectionInterval(
+                p10=12,
+                p50=15,
+                p90=17,
+                selected_source="learned",
+                selected_name="histogram_gradient_boosting",
+            ),
             TARGET_FANTASY_POINTS_TOTAL: ProjectionInterval(
                 p10=p10,
                 p50=p50,
@@ -115,6 +133,83 @@ def _projection(
         },
         explanation={},
     )
+
+
+def test_draft_projection_uses_health_neutral_ppg_and_ignores_games_and_total(
+    rules_factory: Callable[..., LeagueRules],
+) -> None:
+    rules = rules_factory()
+
+    def projection_with_phase4_totals(
+        player_id: str,
+        *,
+        games_active_p50: float,
+        total_p50: float,
+    ) -> PlayerProjection:
+        return PlayerProjection(
+            run_id="phase4-test-run",
+            player_id=player_id,
+            display_name=f"Health-neutral {player_id}",
+            prediction_season=rules.season,
+            position="RB",
+            prediction_status="learned",
+            targets={
+                TARGET_FANTASY_POINTS_PER_GAME: ProjectionInterval(
+                    p10=15,
+                    p50=20,
+                    p90=25,
+                    selected_source="learned",
+                    selected_name="ppg_test_model",
+                ),
+                TARGET_GAMES_ACTIVE: ProjectionInterval(
+                    p10=1,
+                    p50=games_active_p50,
+                    p90=17,
+                    selected_source="learned",
+                    selected_name="games_test_model",
+                ),
+                TARGET_FANTASY_POINTS_TOTAL: ProjectionInterval(
+                    p10=1,
+                    p50=total_p50,
+                    p90=700,
+                    selected_source="learned",
+                    selected_name="total_test_model",
+                ),
+            },
+            explanation={},
+        )
+
+    prepared = prepare_draft_room(
+        _projection_board(
+            rules,
+            rows=(
+                projection_with_phase4_totals(
+                    "low-phase4-totals",
+                    games_active_p50=1,
+                    total_p50=2,
+                ),
+                projection_with_phase4_totals(
+                    "high-phase4-totals",
+                    games_active_p50=17,
+                    total_p50=600,
+                ),
+            ),
+        ),
+        _market_board(),
+        rules=rules,
+        projection_reference_rules=rules,
+    )
+
+    assert len(prepared.players) == 2
+    assert {player.p50 for player in prepared.players} == {340.0}
+    assert {player.p10 for player in prepared.players} == {255.0}
+    assert {player.p90 for player in prepared.players} == {425.0}
+    assert {player.projection_source for player in prepared.players} == {
+        HEALTH_NEUTRAL_PROJECTION_SOURCE
+    }
+    assert {player.projection_method for player in prepared.players} == {
+        "fantasy_points_per_game_x_17_games[learned:ppg_test_model]"
+    }
 
 
 def _market_board(*rows: AdpMarketRow, available: bool = True) -> AdpMarketBoard:
@@ -144,16 +239,19 @@ def _market_row(
     team_count: int = 12,
     scoring_format: str = "ppr",
     average_pick: float = 20,
+    source: str = "ffc",
+    snapshot_id: str = "snapshot-1",
+    captured_at: datetime = datetime(2026, 8, 1, tzinfo=UTC),
 ) -> AdpMarketRow:
     return AdpMarketRow(
-        snapshot_id="snapshot-1",
+        snapshot_id=snapshot_id,
         raw_source_row_id=raw_id,
-        identity=AdpIdentity("ffc", raw_id, player_id),
+        identity=AdpIdentity(source, raw_id, player_id),
         player_name=name,
         position=position,
         nfl_team="TEST",
-        source="ffc",
-        captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        source=source,
+        captured_at=captured_at,
         season=season,
         scoring_format=scoring_format,
         team_count=team_count,
@@ -382,6 +480,284 @@ def test_projection_only_rows_do_not_dilute_fully_mapped_market_coverage(
         assert simulation["market_universe_player_count"] == 20
         assert simulation["mapped_player_count"] == 20
         assert simulation["market_coverage"] == 1.0
+
+
+def test_mapped_market_only_rows_do_not_block_projected_player_recommendations(
+    rules_factory: Callable[..., LeagueRules],
+) -> None:
+    rules = rules_factory()
+    market = _market_board(
+        _market_row(
+            "ffc-1",
+            "Canonical Receiver",
+            "WR",
+            player_id="player-1",
+            mapping_confidence="reviewed",
+        ),
+        _market_row(
+            "ffc-2",
+            "Canonical Runner",
+            "RB",
+            player_id="player-2",
+            mapping_confidence="reviewed",
+            average_pick=30,
+        ),
+        _market_row(
+            "sleeper-deep-player",
+            "Market Only Receiver",
+            "WR",
+            player_id="market-only-player",
+            mapping_confidence="exact",
+            average_pick=240,
+        ),
+    )
+
+    prepared = prepare_draft_room(
+        _projection_board(rules),
+        market,
+        rules=rules,
+        projection_reference_rules=rules,
+    )
+
+    assert prepared.readiness.recommendation_ready
+    assert prepared.readiness.recommendation_status == RECOMMENDATION_READY
+    assert prepared.readiness.compatible_market_rows == 2
+    assert prepared.readiness.mapped_market_rows == 2
+    assert prepared.readiness.matched_market_rows == 2
+    assert prepared.readiness.excluded_market_rows == 1
+    assert prepared.readiness.market_coverage == 1.0
+    assert prepared.readiness.unmatched_mapped_player_ids == ("market-only-player",)
+    assert "outside the active projection board were ignored" in (
+        prepared.readiness.recommendation_message
+    )
+    assert {player.player_id for player in prepared.players} == {"player-1", "player-2"}
+
+
+def test_cross_source_mappings_select_latest_observation_without_diluting_coverage(
+    rules_factory: Callable[..., LeagueRules],
+) -> None:
+    rules = rules_factory()
+    market = _market_board(
+        _market_row(
+            "ffc-player-1",
+            "Canonical Receiver",
+            "WR",
+            player_id="player-1",
+            mapping_confidence="reviewed",
+            average_pick=28,
+            source="ffc",
+            snapshot_id="ffc-snapshot",
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        ),
+        _market_row(
+            "sleeper-player-1",
+            "Canonical Receiver",
+            "WR",
+            player_id="player-1",
+            mapping_confidence="exact",
+            average_pick=18,
+            source="sleeper",
+            snapshot_id="sleeper-snapshot",
+            captured_at=datetime(2026, 8, 2, tzinfo=UTC),
+        ),
+        _market_row(
+            "sleeper-player-2",
+            "Canonical Runner",
+            "RB",
+            player_id="player-2",
+            mapping_confidence="exact",
+            average_pick=24,
+            source="sleeper",
+            snapshot_id="sleeper-snapshot",
+            captured_at=datetime(2026, 8, 2, tzinfo=UTC),
+        ),
+    )
+
+    prepared = prepare_draft_room(
+        _projection_board(rules),
+        market,
+        rules=rules,
+        projection_reference_rules=rules,
+    )
+
+    assert prepared.readiness.recommendation_ready
+    assert prepared.readiness.compatible_market_rows == 3
+    assert prepared.readiness.mapped_market_rows == 3
+    assert prepared.readiness.matched_market_rows == 2
+    assert prepared.readiness.market_coverage == 1.0
+    assert prepared.readiness.duplicate_mapped_player_ids == ()
+    receiver = next(player for player in prepared.players if player.player_id == "player-1")
+    assert receiver.average_pick == 18
+    assert receiver.market_source == "sleeper"
+    assert receiver.market_snapshot_id == "sleeper-snapshot"
+    assert receiver.market_captured_at == datetime(2026, 8, 2, tzinfo=UTC)
+
+
+def test_cross_source_capture_tie_uses_stable_snapshot_source_and_raw_id_order(
+    rules_factory: Callable[..., LeagueRules],
+) -> None:
+    rules = rules_factory()
+    captured_at = datetime(2026, 8, 2, tzinfo=UTC)
+    market = _market_board(
+        _market_row(
+            "row-z",
+            "Canonical Receiver",
+            "WR",
+            player_id="player-1",
+            mapping_confidence="exact",
+            average_pick=19,
+            source="ffc",
+            snapshot_id="snapshot-z",
+            captured_at=captured_at,
+        ),
+        _market_row(
+            "row-a",
+            "Canonical Receiver",
+            "WR",
+            player_id="player-1",
+            mapping_confidence="exact",
+            average_pick=17,
+            source="sleeper",
+            snapshot_id="snapshot-a",
+            captured_at=captured_at,
+        ),
+    )
+
+    prepared = prepare_draft_room(
+        _projection_board(rules),
+        market,
+        rules=rules,
+        projection_reference_rules=rules,
+    )
+
+    receiver = next(player for player in prepared.players if player.player_id == "player-1")
+    assert receiver.average_pick == 17
+    assert receiver.market_source == "sleeper"
+    assert receiver.market_snapshot_id == "snapshot-a"
+
+
+def test_fantasypros_composite_is_primary_draft_market_source(
+    rules_factory: Callable[..., LeagueRules],
+) -> None:
+    rules = rules_factory()
+    market = _market_board(
+        _market_row(
+            "direct-newer",
+            "Canonical Receiver",
+            "WR",
+            player_id="player-1",
+            mapping_confidence="exact",
+            average_pick=18,
+            source="sleeper",
+            snapshot_id="sleeper-newer",
+            captured_at=datetime(2026, 8, 2, tzinfo=UTC),
+        ),
+        _market_row(
+            "fantasypros-composite",
+            "Canonical Receiver",
+            "WR",
+            player_id="player-1",
+            mapping_confidence="reviewed",
+            average_pick=7,
+            source="fantasypros",
+            snapshot_id="fantasypros-upload",
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        ),
+        _market_row(
+            "runner",
+            "Canonical Runner",
+            "RB",
+            player_id="player-2",
+            mapping_confidence="reviewed",
+            average_pick=9,
+            source="fantasypros",
+            snapshot_id="fantasypros-upload",
+            captured_at=datetime(2026, 8, 1, tzinfo=UTC),
+        ),
+    )
+
+    prepared = prepare_draft_room(
+        _projection_board(rules),
+        market,
+        rules=rules,
+        projection_reference_rules=rules,
+    )
+
+    receiver = next(player for player in prepared.players if player.player_id == "player-1")
+    assert receiver.average_pick == 7
+    assert receiver.market_source == "fantasypros"
+    assert receiver.market_snapshot_id == "fantasypros-upload"
+
+
+def test_position_conflict_is_excluded_when_another_source_matches_projection(
+    rules_factory: Callable[..., LeagueRules],
+) -> None:
+    rules = rules_factory()
+    market = _market_board(
+        _market_row(
+            "conflict",
+            "Canonical Receiver",
+            "RB",
+            player_id="player-1",
+            mapping_confidence="reviewed",
+            source="sleeper",
+            snapshot_id="sleeper-snapshot",
+            average_pick=19,
+        ),
+        _market_row(
+            "matching",
+            "Canonical Receiver",
+            "WR",
+            player_id="player-1",
+            mapping_confidence="reviewed",
+            source="ffc",
+            snapshot_id="ffc-snapshot",
+            average_pick=21,
+        ),
+        _market_row(
+            "runner",
+            "Canonical Runner",
+            "RB",
+            player_id="player-2",
+            mapping_confidence="exact",
+            source="sleeper",
+            snapshot_id="sleeper-snapshot",
+            average_pick=25,
+        ),
+        _market_row(
+            "market-only",
+            "Market Only Runner",
+            "RB",
+            player_id="market-only-player",
+            mapping_confidence="exact",
+        ),
+    )
+
+    prepared = prepare_draft_room(
+        _projection_board(rules),
+        market,
+        rules=rules,
+        projection_reference_rules=rules,
+    )
+
+    assert prepared.readiness.recommendation_ready
+    assert prepared.readiness.recommendation_status == RECOMMENDATION_READY
+    assert prepared.readiness.compatible_market_rows == 2
+    assert prepared.readiness.mapped_market_rows == 2
+    assert prepared.readiness.matched_market_rows == 2
+    assert prepared.readiness.excluded_market_rows == 2
+    assert prepared.readiness.market_coverage == 1.0
+    assert prepared.readiness.conflicting_position_player_ids == ("player-1",)
+    assert prepared.readiness.unmatched_mapped_player_ids == ("market-only-player",)
+    receiver = next(player for player in prepared.players if player.player_id == "player-1")
+    assert receiver.has_market_evidence
+    assert receiver.position == "WR"
+    assert receiver.market_source == "ffc"
+    assert receiver.market_snapshot_id == "ffc-snapshot"
+    assert receiver.average_pick == 21
+    assert "Position-mismatched market observations for 1" in (
+        prepared.readiness.recommendation_message
+    )
 
 
 def test_scoring_change_blocks_pool_even_when_roster_is_otherwise_compatible(

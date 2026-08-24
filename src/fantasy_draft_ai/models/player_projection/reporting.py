@@ -323,6 +323,24 @@ def _render_evaluation_markdown(report: Mapping[str, Any]) -> str:
         lines.append("")
 
     raw_champions = _mapping_rows(report.get("champions"))
+    selection_metric = str(report.get("selection_metric") or "")
+    draft_relevant_selection = selection_metric.startswith("draft_relevant_")
+    selection_value_label = (
+        "Draft-relevant validation MAE"
+        if draft_relevant_selection
+        else "Validation MAE"
+    )
+    baseline_value_label = (
+        "Draft-relevant baseline MAE" if draft_relevant_selection else "Baseline MAE"
+    )
+    learned_value_label = (
+        "Draft-relevant learned MAE" if draft_relevant_selection else "Learned MAE"
+    )
+    improvement_label = (
+        "Draft-relevant MAE improvement"
+        if draft_relevant_selection
+        else "Learned MAE improvement"
+    )
     champions: list[dict[str, Any]] = []
     for row in raw_champions:
         comparison = row.get("best_learned_vs_baseline_bootstrap")
@@ -345,12 +363,12 @@ def _render_evaluation_markdown(report: Mapping[str, Any]) -> str:
                     ("selected_source", "Source"),
                     ("selected_name", "Champion"),
                     ("decision_status", "Decision"),
-                    ("selection_value", "Validation MAE"),
+                    ("selection_value", selection_value_label),
                     ("reference_baseline_name", "Reference baseline"),
-                    ("reference_baseline_value", "Baseline MAE"),
+                    ("reference_baseline_value", baseline_value_label),
                     ("best_learned_name", "Best learned"),
-                    ("best_learned_value", "Learned MAE"),
-                    ("best_learned_mae_improvement", "Learned MAE improvement"),
+                    ("best_learned_value", learned_value_label),
+                    ("best_learned_mae_improvement", improvement_label),
                     ("bootstrap_ci95_lower", "Bootstrap CI lower"),
                     ("bootstrap_ci95_upper", "Bootstrap CI upper"),
                     ("test_mae", "Test MAE"),

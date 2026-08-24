@@ -1,0 +1,13 @@
+version: 1
+season: 2026
+video_scope:
+  published_on_or_after: 2026-01-01
+channels:
+  - channel_key: fantasy_football_advice_ffa
+    display_name: Fantasy Football Advice
+    videos_url: https://www.youtube.com/@FantasyFootballAdviceFFA/videos
+player_aliases:
+  - player_id: 00-0038543
+    display_name: Jaxon Smith-Njigba
+    aliases:
+      - JSN

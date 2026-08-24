@@ -86,7 +86,7 @@ An active game is counted only when `offense_snaps + defense_snaps + special_tea
 
 One row per player and prediction season, with unique logical key `(player_id, prediction_season)`. `feature_season = prediction_season - 1`. `cutoff_date` and `feature_available_at` are September 1 of the prediction season: a logical preseason cutoff, not the later local acquisition date. `source_max_as_of` separately records the newest 2026 archive timestamp used by the row.
 
-`feature_payload` contains cutoff-safe lag-one and weighted three-year production, component rates, prior position means, rookie/sparse-history fallbacks, age, height, static draft fields, team-change context, transparent baseline inputs, candidate-selection evidence, and missingness flags. The candidate proxy uses four prior seasons plus current/prior rookie cohorts, while only three seasons enter weighted production. Historical weekly/participation position takes precedence. Static identity position is allowed only when `identity_source_as_of` is no later than the preseason cutoff; current team, weight, experience, and active status are excluded. `target_payload` is retained only as a nullable compatibility column and is not populated by the Phase 3 builder.
+`feature_payload` contains cutoff-safe lag-one and weighted three-year production, component rates, prior position means, rookie/sparse-history fallbacks, raw `age_at_cutoff`, a deterministic `age_adjustment_factor`, height, static draft fields, team-change context, transparent baseline inputs, candidate-selection evidence, and missingness flags. The age factor is a smooth position-specific performance adjustment for transparent baselines, not an injury or games-played forecast. Learned models use raw age and exclude the derived factor so age is not penalized twice. The candidate proxy uses four prior seasons plus current/prior rookie cohorts, while only three seasons enter weighted production. Historical weekly/participation position takes precedence. Static identity position is allowed only when `identity_source_as_of` is no later than the preseason cutoff; current team, weight, experience, and active status are excluded. `target_payload` is retained only as a nullable compatibility column and is not populated by the Phase 3 builder.
 
 `feature_version`, scoring ruleset fingerprint, source dataset IDs, maximum contributing stat season, source timestamp, and data fingerprint make each build auditable. The validated set contains 11,171 rows, including 1,367 live 2026 rows without known outcomes. Of these, 309 use a cutoff-safe static identity position. Another 2,710 current-core historical entry-cohort candidates lacked a cutoff-safe position and were excluded rather than inheriting the current snapshot. That exclusion prevents later position conversions from leaking backward, but historical rookie baseline performance remains unavailable until a historical preseason-position archive exists.
 
@@ -108,17 +108,17 @@ One row per player, prediction season, target, and transparent baseline. It stor
 
 One active record per combined feature/target build. It binds the report and baseline versions to feature, target, build, and scoring fingerprints plus prediction/evaluated row counts, chronological folds, upstream quality warnings, candidate outcome counts, metrics, limitations, and unavailable comparisons. Metrics include the all-candidate attrition view and separately labeled positive-game diagnostics. These records describe transparent heuristics, not a trained ML model.
 
-The validated Phase 3 build uses feature fingerprint `d2bdda170fcbf88ccfe0b3f437615583a0684057eebe1fc12aa65463a47cf9cf`, target fingerprint `dd759bbf87c146884e68425079b3a759d1d6d4bb434d5bccee6d9d91c98c56a9`, and combined build fingerprint `f195dcb17a1a386b2f2003d87a06921550235cbec62aecd0f4eda419aa664cd7`.
+The generated Phase 3 evaluation records the current feature, target, and combined-build fingerprints. They are not duplicated here because any contract rebuild intentionally changes them.
 
 ## `player_projection_runs`
 
 The single authoritative Phase 4 run header. It binds the deterministic `run_id` to the frozen Phase 3 feature, target, build, scoring, and baseline-report fingerprints; model-feature and model-configuration fingerprints; chronological split definitions; persisted row counts; training timestamp; run status; and the registered publication payload, including the unique immutable-attempt `publication_id`. The six Phase 4 tables are staged as `validating`, audited, and promoted to `complete` inside one transaction; failure rolls back to the prior complete publication.
 
-The active run is `phase4-7ae8e9aed04bffca00c0`, with run fingerprint `7ae8e9aed04bffca00c04d05e623f8afd20877dcfa09ddf43a8c1a7e8c34db03`. Its Phase 3 fingerprints are unchanged from the validated baseline build.
+The generated Phase 4 evaluation records the active run and its exact upstream fingerprints. A current publication must reconcile them with the active Phase 3 build.
 
 ## `player_projection_models`
 
-One registered final estimator per `(run_id, model_family, target_name, position)`. Fields record chronological training seasons and row count, feature/categorical-feature names, selected hyperparameters, uncertainty method, package versions, and project-relative artifact/model-card paths with SHA-256 hashes and artifact byte size.
+One registered final estimator per `(run_id, model_family, target_name, position)`. Fields record chronological training seasons and row count, feature/categorical-feature names, selected hyperparameters, uncertainty method, package versions, and project-relative artifact/model-card paths with SHA-256 hashes and artifact byte size. The learned feature allowlist includes `age_at_cutoff` and excludes `age_adjustment_factor`; configuration validation rejects a custom contract that attempts to include both.
 
 The validated run registers 24 models: Ridge and histogram gradient boosting for four core positions and three targets. Registration does not make every model a champion; all final candidates remain auditable.
 
@@ -126,13 +126,13 @@ The validated run registers 24 models: Ridge and histogram gradient boosting for
 
 One candidate prediction per run, player, prediction season, target, and model family. `prediction_scope` distinguishes validation, test, and live rows; `fold_label` and `training_max_season` enforce chronology. `predicted_value` equals the residual-adjusted `p50`, while `p10` and `p90` carry empirical signed-residual bounds. Historical rows may have nullable actual values; live rows must not have actuals. Seven lineage fingerprints bind every row to its exact upstream data, rules, baselines, selected model feature set, and model configuration.
 
-The validated run stores 45,588 rows: 32,024 have evaluable historical actuals and 6,804 are live learned-candidate predictions. Learned intervals use earlier out-of-fold training residuals only.
+Current historical, evaluable, and live prediction counts are recorded in the generated Phase 4 evaluation. Learned intervals use earlier out-of-fold training residuals only.
 
 ## `player_projection_champions`
 
-One decision per `(run_id, target_name, position)`, for 12 total routes. It records whether the selected source is `learned` or `baseline`, the selected model/baseline name, validation metric and value, reference baseline, improvement, and a payload containing the bootstrap decision evidence. The 2025 test does not participate in selection.
+One decision per `(run_id, target_name, position)`, for 12 total routes. It records whether the selected source is `learned` or `baseline`, the selected model/baseline name, validation metric and value, reference baseline, improvement, and a payload containing draft-relevant cohort metrics, bootstrap evidence, the pooled-MAE safety gate, and the total-points top-N capture guard. The 2025 test does not participate in selection.
 
-Across 84 validation candidates, learned models won 9 routes: all total-points and games-active routes plus histogram gradient boosting for WR points per game. QB, RB, and TE points per game retain the `age_position_adjusted` baseline. A learned win requires lower pooled 2020-2024 MAE and a learned-minus-baseline 95% confidence-interval upper bound below zero.
+The draft-relevant cohort is fixed independently of every candidate from the cutoff-safe `weighted_components` total-points baseline for each 2020-2024 validation season: top 12 QB, 24 RB, 36 WR, and 12 TE. A learned win requires lower MAE on that shared cohort and a learned-minus-baseline paired-bootstrap 95% confidence-interval upper bound below zero. It must also satisfy the configured pooled-MAE regression tolerance, while total-points routes must preserve top-N capture within the configured ranking tolerance. Current route winners and metrics are reported by the generated Phase 4 evaluation.
 
 ## `player_projection_evaluation_metadata`
 
@@ -141,6 +141,8 @@ Exactly one evaluation record belongs to the active run. It binds the report fin
 ## `player_projection_board`
 
 One served row per `(run_id, player_id, prediction_season)`. Each of the three targets stores P10/P50/P90, selected source, and selected name. `prediction_status` distinguishes learned, retained-baseline, and rookie-fallback behavior; `explanation_payload` contains target-level model factors or transparent fallback reasoning. The row repeats all lineage fingerprints, including the evaluation-report fingerprint, so the app cannot mix publications.
+
+The draft-room service deliberately derives its displayed and frozen draft projection from the selected `fantasy_points_per_game` interval multiplied by 17 regular-season games. It does not use the `games_active` target or direct `fantasy_points_total` target to lower a draft rank. This is a full-health comparison assumption, not a player-specific injury forecast. When accepted market evidence exists, the FantasyPros composite is the preferred consensus row; the health-neutral projection produces the separately labeled Experimental Model Rank and model-versus-market delta.
 
 The validated 2026 board has 1,367 rows. Learned selections use training-only residual intervals evaluated by season, position, and projection tier. Every baseline selection is point-only with `P10=P50=P90`. The same point-only rule applies to 233 rookie fallbacks—QB 21, RB 46, WR 114, and TE 52—because no valid historical preseason rookie-position cohort exists.
 
@@ -152,25 +154,54 @@ DuckDB and the registered attempt-scoped hashes are authoritative. Generated eva
 
 One source observation per `(snapshot_id, raw_source_row_id)`. The row preserves source, capture time, season, scoring format, team count, display context, average/median/rank/min/max picks, sample size, source movement, source standard deviation, and the source movement horizon. `player_id` is nullable; `mapping_confidence` records whether canonical identity evidence exists. Unresolved rows remain source-keyed and are never joined by display name.
 
+An accepted FantasyPros Overall ADP CSV produces four source values from the same player row:
+`yahoo` from `Yahoo`, `sleeper` from `Sleeper`, `rtsports` from `RTSports`, and `fantasypros` from
+`AVG`. The `fantasypros` observation is the exported FantasyPros composite, not an application-side
+mean of the other three values. The upload contract also requires `Rank`, `Player (Bye)`, and `POS`
+for ordering and identity evidence. An optional `Real-Time` field stays only in the immutable source
+file and is not normalized. Name cleanup may propose a canonical candidate, but ambiguous identity remains
+nullable rather than being confirmed from display text alone.
+
 ## `adp_snapshot_metadata`
 
 One row per immutable production snapshot. The stable `snapshot_id` binds source, capture time, season, scoring format, team count, position scope, and raw SHA-256 evidence. `raw_relative_path` remains project-relative, `source_dataset_ids` records every manifest collapsed into the snapshot, `row_count` reconciles canonical observations, and `loaded_at` records warehouse normalization time. Repeating the same raw capture preserves this row and its observation count.
+
+The FantasyPros upload keeps the exact user-supplied CSV bytes as immutable evidence and links one
+automatic import to four separate overall snapshot metadata rows: Yahoo, Sleeper, RTSports, and
+FantasyPros. No FantasyPros credentials, browser cookies, or authenticated session material belongs
+in snapshot metadata or any other warehouse table.
 
 ## `adp_movement_features`
 
 One cutoff-safe feature row per source observation. `entity_key` uses a canonical player ID only when mapping evidence exists and otherwise retains the stable source identity. Fields include current and prior ADP, prior snapshot/time, elapsed days, 1/3/7/14-day change, velocity, acceleration, 14-day rolling volatility, cross-source spread, and source/identity observation counts. `feature_version` and `data_fingerprint` bind the calculation contract. A feature row uses no observation after its own `captured_at` cutoff.
 
+The current deterministic six-snapshot build contains 2,795 movement-feature rows.
+
 ## `adp_movement_forecasts`
 
-Three one-day baseline rows per source observation: `persistence`, `linear_trend`, and `exponentially_weighted_trend`. `predicted_average_pick` and `predicted_change` are nullable when the method lacks enough history; `status`, `reason`, and `history_count` make that boundary explicit. Persistence requires one observation. The two trend methods require at least three dated observations for the same source player. The validated one-snapshot build therefore contains 738 rows: 246 ready persistence forecasts and zero ready linear or exponentially weighted forecasts.
+Three one-day baseline rows per source observation: `persistence`, `linear_trend`, and
+`exponentially_weighted_trend`. `predicted_average_pick` and `predicted_change` are nullable when the
+method lacks enough history; `status`, `reason`, and `history_count` make that boundary explicit.
+Persistence requires one observation. The two trend methods require at least three dated
+observations for the same source player. The current six-snapshot build contains 8,385 forecast
+rows across the three registered methods.
 
 ## `adp_availability_parameters`
 
-One distribution parameter row per source observation. `average_pick` is the location and `scale` is selected from source standard deviation, then min/max-derived spread, then a versioned configured fallback. `evidence_method`, `fallback_group`, source sample/range fields, and `mapping_confidence` keep the estimate explainable. The app conditions the pick distribution on the player still being available at the current pick. The validated build has 246 rows, all using source standard deviation and none using configured fallback.
+One distribution parameter row per source observation. `average_pick` is the location and `scale` is
+selected from source standard deviation, then min/max-derived spread, then a versioned configured
+fallback. `evidence_method`, `fallback_group`, source sample/range fields, and
+`mapping_confidence` keep the estimate explainable. The app conditions the pick distribution on the
+player still being available at the current pick. The current build has 2,795 parameter rows, one
+for every production ADP observation.
 
 ## `adp_phase5_builds`
 
-One deterministic logical build record per `build_fingerprint`. It binds the snapshot-data fingerprint and availability-configuration fingerprint to snapshot, observation, feature, forecast, parameter, and ready-method counts. `calibration_status`, `supervised_status`, and `report_payload` preserve honest capability boundaries. The validated build fingerprint is `3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b`; its snapshot fingerprint is `44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2`.
+One deterministic logical build record per `build_fingerprint`. It binds the snapshot-data
+fingerprint and availability-configuration fingerprint to snapshot, observation, feature,
+forecast, parameter, and ready-method counts. `calibration_status`, `supervised_status`, and
+`report_payload` preserve honest capability boundaries. The current deterministic rebuild records
+six snapshots, 2,795 observations/features/parameters, and 8,385 forecast rows.
 
 ## `league_rules`
 

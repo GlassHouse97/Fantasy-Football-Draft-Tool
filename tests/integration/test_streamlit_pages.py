@@ -18,6 +18,11 @@ PAGE_CASES = (
     ("fantasy_draft_ai.ui.pages.draft_room", "Draft Room"),
     ("fantasy_draft_ai.ui.pages.post_draft", "Post-Draft Report"),
     ("fantasy_draft_ai.ui.pages.learning_center", "Learning Center"),
+    ("fantasy_draft_ai.ui.pages.player_export", "Player Export List"),
+    (
+        "fantasy_draft_ai.ui.pages.player_market_consensus",
+        "Player Market Consensus",
+    ),
 )
 
 
@@ -35,6 +40,80 @@ def test_page_has_no_headless_exception(module: str, expected_title: str) -> Non
 
     assert len(app.exception) == 0
     assert expected_title in [title.value for title in app.title]
+
+
+def test_player_export_upload_imports_fantasypros_aggregate_without_mapping_steps() -> None:
+    script = """
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from fantasy_draft_ai.ui.pages.player_export import _render_fantasypros_upload
+
+result = SimpleNamespace(
+    committed=True,
+    reused_archive=False,
+    source_summaries=tuple(
+        SimpleNamespace(source=source, rows=rows, mapped=rows, unresolved=0)
+        for source, rows in (
+            ("yahoo", 2),
+            ("sleeper", 2),
+            ("rtsports", 2),
+            ("fantasypros", 2),
+        )
+    ),
+)
+
+with patch(
+    "fantasy_draft_ai.ui.pages.player_export.import_fantasypros_adp_upload",
+    return_value=result,
+):
+    _render_fantasypros_upload(SimpleNamespace())
+"""
+    app = AppTest.from_string(script, default_timeout=60).run()
+    app = app.file_uploader[0].set_value(
+        (
+            "FantasyPros.csv",
+            b"Rank,Player (Bye),POS,Yahoo,Sleeper,RTSports,AVG,Real-Time\n"
+            b"1,Jahmyr Gibbs   DET (6),RB1,1,1,1,1.0,1\n",
+            "text/csv",
+        )
+    ).run()
+
+    assert len(app.exception) == 0
+    assert len(app.file_uploader) == 1
+    assert len(app.selectbox) == 0
+    assert len(app.checkbox) == 0
+    assert any("loaded successfully" in success.value for success in app.success)
+
+
+def test_player_export_upload_reports_duckdb_import_errors_without_stack_trace() -> None:
+    script = """
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import duckdb
+
+from fantasy_draft_ai.ui.pages.player_export import _render_fantasypros_upload
+
+with patch(
+    "fantasy_draft_ai.ui.pages.player_export.import_fantasypros_adp_upload",
+    side_effect=duckdb.IOException("warehouse is locked"),
+):
+    _render_fantasypros_upload(SimpleNamespace())
+"""
+    app = AppTest.from_string(script, default_timeout=60).run()
+    app = app.file_uploader[0].set_value(
+        (
+            "FantasyPros.csv",
+            b"Rank,Player (Bye),POS,Yahoo,Sleeper,RTSports,AVG,Real-Time\n"
+            b"1,Jahmyr Gibbs   DET (6),RB1,1,1,1,1.0,1\n",
+            "text/csv",
+        )
+    ).run()
+
+    assert len(app.exception) == 0
+    assert any("was not loaded" in error.value for error in app.error)
+    assert any("warehouse is locked" in caption.value for caption in app.caption)
 
 
 def test_home_restore_defaults_previews_scoped_state_without_real_reset() -> None:

@@ -17,6 +17,11 @@ from typing import Any, Final, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from fantasy_draft_ai.models.player_projection.config import (
+    TARGET_FANTASY_POINTS_TOTAL,
+    DraftRelevancePolicy,
+)
+
 DEFAULT_VALIDATION_SEASONS: Final = (2020, 2021, 2022, 2023, 2024)
 DEFAULT_TEST_SEASON: Final = 2025
 DEFAULT_BASELINES: Final = (
@@ -313,16 +318,16 @@ def select_champions(
     prediction_key: str = "predicted_value",
     n_bootstrap: int = 2_000,
     seed: int = 42,
+    draft_relevance_policy: DraftRelevancePolicy | None = None,
 ) -> dict[str, Any]:
     """Select one champion per position and target using validation evidence only.
 
-    Validation errors are pooled across 2020-2024 by default (each evaluable
-    player-season is one observation). The best learned candidate wins only when
-    its MAE is strictly lower than the best transparent baseline *and* the paired
-    bootstrap 95% CI for learned-minus-baseline MAE lies entirely below zero.
-    Ties and inconclusive improvements retain the baseline. The 2025 test metric
-    is attached only after selection. All candidates must cover the same
-    validation player-seasons.
+    Without a draft-relevance policy, validation errors retain the original pooled
+    2020-2024 behavior. With a policy, one fixed cohort per season and position is
+    selected from the cutoff-safe total-points anchor baseline. Candidate selection
+    then uses cohort MAE with paired-bootstrap, pooled-MAE, and total-points capture
+    safeguards. The 2025 test metric is attached only after selection. All
+    candidates must cover the same validation player-seasons.
 
     Required standardized sources are ``baseline`` and ``learned``. The output
     contains JSON-safe candidate metrics and champion records suitable for a
@@ -367,6 +372,16 @@ def select_champions(
     if not candidate_groups:
         raise ValueError("No candidate predictions were provided.")
 
+    draft_relevant_keys = (
+        _draft_relevant_validation_keys(
+            candidate_groups,
+            selection_seasons,
+            draft_relevance_policy,
+        )
+        if draft_relevance_policy is not None
+        else {}
+    )
+
     candidate_metrics: list[dict[str, Any]] = []
     metrics_lookup: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     for candidate_group in sorted(candidate_groups):
@@ -399,6 +414,38 @@ def select_champions(
             (row.predicted_value for row in test_rows),
             top_n=None,
         )
+        relevant_rows = (
+            [
+                row
+                for row in validation_rows
+                if (row.prediction_season, row.entity_id) in draft_relevant_keys[position]
+            ]
+            if draft_relevance_policy is not None
+            else validation_rows
+        )
+        relevant_seasons_present = {row.prediction_season for row in relevant_rows}
+        missing_relevant_seasons = sorted(set(selection_seasons) - relevant_seasons_present)
+        if missing_relevant_seasons:
+            raise ValueError(
+                f"{position}/{target_name}/{source}/{candidate_name} has no evaluable "
+                "draft-relevant rows for validation seasons "
+                f"{missing_relevant_seasons}."
+            )
+        draft_relevant = regression_metrics(
+            (row.actual_value for row in relevant_rows),
+            (row.predicted_value for row in relevant_rows),
+            top_n=None,
+        )
+        total_capture = (
+            _mean_annual_top_n_capture(
+                validation_rows,
+                selection_seasons,
+                top_n=draft_relevance_policy.top_n_for(position),
+            )
+            if draft_relevance_policy is not None
+            and target_name == TARGET_FANTASY_POINTS_TOTAL
+            else None
+        )
         metric_record = {
             "position": position,
             "target_name": target_name,
@@ -407,6 +454,10 @@ def select_champions(
             "validation_seasons": list(selection_seasons),
             "validation_rows": validation["rows"],
             "validation_mae": validation["mae"],
+            "draft_relevant_validation_rows": draft_relevant["rows"],
+            "draft_relevant_validation_mae": draft_relevant["mae"],
+            "draft_relevant_validation_signed_bias": _signed_bias(relevant_rows),
+            "validation_top_n_capture_rate": total_capture,
             "test_season": test_season,
             "test_rows": test["rows"],
             "test_mae": test["mae"],
@@ -437,85 +488,196 @@ def select_champions(
         _require_matched_validation_samples(
             {key: candidate_groups[key] for key in group_keys}, selection_seasons
         )
+        selection_metric_key = (
+            "draft_relevant_validation_mae"
+            if draft_relevance_policy is not None
+            else "validation_mae"
+        )
         best_baseline = min(
             baseline_keys,
-            key=lambda key: (cast(float, metrics_lookup[key]["validation_mae"]), key[3]),
+            key=lambda key: (
+                cast(float, metrics_lookup[key][selection_metric_key]),
+                cast(float, metrics_lookup[key]["validation_mae"]),
+                key[3],
+            ),
         )
         best_learned = (
             min(
                 learned_keys,
-                key=lambda key: (cast(float, metrics_lookup[key]["validation_mae"]), key[3]),
+                key=lambda key: (
+                    cast(float, metrics_lookup[key][selection_metric_key]),
+                    cast(float, metrics_lookup[key]["validation_mae"]),
+                    key[3],
+                ),
             )
             if learned_keys
             else None
         )
-        baseline_mae = cast(float, metrics_lookup[best_baseline]["validation_mae"])
+        baseline_selection_mae = cast(
+            float, metrics_lookup[best_baseline][selection_metric_key]
+        )
+        baseline_pooled_mae = cast(float, metrics_lookup[best_baseline]["validation_mae"])
         comparison = (
             _bootstrap_candidate_pair(
                 candidate_groups[best_learned],
                 candidate_groups[best_baseline],
                 selection_seasons,
+                included_keys=(
+                    draft_relevant_keys[position]
+                    if draft_relevance_policy is not None
+                    else None
+                ),
                 n_resamples=n_bootstrap,
                 seed=seed,
             )
             if best_learned is not None
             else None
         )
-        learned_mae = (
+        learned_selection_mae = (
+            cast(float, metrics_lookup[best_learned][selection_metric_key])
+            if best_learned is not None
+            else None
+        )
+        learned_pooled_mae = (
             cast(float, metrics_lookup[best_learned]["validation_mae"])
             if best_learned is not None
             else None
         )
-        learned_has_lower_mae = bool(learned_mae is not None and learned_mae < baseline_mae)
+        learned_has_lower_selection_mae = bool(
+            learned_selection_mae is not None
+            and learned_selection_mae < baseline_selection_mae
+        )
+        learned_has_lower_pooled_mae = bool(
+            learned_pooled_mae is not None and learned_pooled_mae < baseline_pooled_mae
+        )
         bootstrap_supports_learned = bool(
             comparison is not None
             and comparison["ci95_upper"] is not None
             and cast(float, comparison["ci95_upper"]) < 0.0
         )
-        learned_wins = learned_has_lower_mae and bootstrap_supports_learned
+        pooled_mae_safety_gate_passed = bool(
+            learned_pooled_mae is not None
+            and (
+                draft_relevance_policy is None
+                or learned_pooled_mae
+                <= baseline_pooled_mae
+                * (1.0 + draft_relevance_policy.pooled_mae_regression_tolerance)
+            )
+        )
+        baseline_capture = metrics_lookup[best_baseline]["validation_top_n_capture_rate"]
+        learned_capture = (
+            metrics_lookup[best_learned]["validation_top_n_capture_rate"]
+            if best_learned is not None
+            else None
+        )
+        capture_guard_required = bool(
+            draft_relevance_policy is not None
+            and target_name == TARGET_FANTASY_POINTS_TOTAL
+        )
+        capture_regression_tolerance = (
+            draft_relevance_policy.max_total_top_n_capture_regression
+            if draft_relevance_policy is not None
+            else 0.0
+        )
+        total_capture_guard_passed = bool(
+            not capture_guard_required
+            or (
+                baseline_capture is not None
+                and learned_capture is not None
+                and cast(float, learned_capture)
+                >= cast(float, baseline_capture)
+                - capture_regression_tolerance
+            )
+        )
+        learned_wins = (
+            learned_has_lower_selection_mae
+            and bootstrap_supports_learned
+            and pooled_mae_safety_gate_passed
+            and total_capture_guard_passed
+        )
         if best_learned is None:
             decision_status = "no_learned_candidate_baseline_retained"
             learned_improvement_status = "unavailable"
-        elif learned_mae == baseline_mae:
-            decision_status = "mae_tie_baseline_retained"
+        elif learned_selection_mae == baseline_selection_mae:
+            decision_status = (
+                "draft_relevant_mae_tie_baseline_retained"
+                if draft_relevance_policy is not None
+                else "mae_tie_baseline_retained"
+            )
             learned_improvement_status = "tie"
-        elif not learned_has_lower_mae:
-            decision_status = "learned_regression_baseline_retained"
+        elif not learned_has_lower_selection_mae:
+            decision_status = (
+                "learned_draft_relevant_regression_baseline_retained"
+                if draft_relevance_policy is not None
+                else "learned_regression_baseline_retained"
+            )
             learned_improvement_status = "regression"
         elif not bootstrap_supports_learned:
-            decision_status = "learned_improvement_inconclusive_baseline_retained"
+            decision_status = (
+                "learned_draft_relevant_improvement_inconclusive_baseline_retained"
+                if draft_relevance_policy is not None
+                else "learned_improvement_inconclusive_baseline_retained"
+            )
             learned_improvement_status = "inconclusive"
+        elif not pooled_mae_safety_gate_passed:
+            decision_status = "learned_pooled_mae_safety_gate_failed_baseline_retained"
+            learned_improvement_status = "pooled_regression"
+        elif not total_capture_guard_passed:
+            decision_status = "learned_total_capture_guard_failed_baseline_retained"
+            learned_improvement_status = "ranking_regression"
         else:
-            decision_status = "learned_significant_improvement_selected"
+            decision_status = (
+                "learned_draft_relevant_improvement_selected"
+                if draft_relevance_policy is not None
+                else "learned_significant_improvement_selected"
+            )
             learned_improvement_status = "statistically_clear"
         selected = best_learned if learned_wins and best_learned is not None else best_baseline
         selected_metrics = metrics_lookup[selected]
-        selected_mae = cast(float, selected_metrics["validation_mae"])
+        selected_mae = cast(float, selected_metrics[selection_metric_key])
         champions.append(
             {
                 "position": position,
                 "target_name": target_name,
                 "selected_source": selected[2],
                 "selected_name": selected[3],
-                "selection_metric": "pooled_validation_mae",
+                "selection_metric": (
+                    "draft_relevant_validation_mae_with_pooled_safety_gate"
+                    if draft_relevance_policy is not None
+                    else "pooled_validation_mae"
+                ),
                 "selection_value": selected_mae,
                 "validation_seasons": list(selection_seasons),
                 "validation_rows": selected_metrics["validation_rows"],
+                "draft_relevant_validation_rows": selected_metrics[
+                    "draft_relevant_validation_rows"
+                ],
+                "pooled_validation_mae": selected_metrics["validation_mae"],
                 "reference_baseline_name": best_baseline[3],
-                "reference_baseline_value": baseline_mae,
-                "mae_improvement_over_best_baseline": baseline_mae - selected_mae,
+                "reference_baseline_value": baseline_selection_mae,
+                "reference_baseline_pooled_validation_mae": baseline_pooled_mae,
+                "mae_improvement_over_best_baseline": baseline_selection_mae - selected_mae,
                 "decision_status": decision_status,
                 "learned_improvement_status": learned_improvement_status,
-                "learned_has_lower_validation_mae": learned_has_lower_mae,
+                "learned_has_lower_validation_mae": learned_has_lower_pooled_mae,
+                "learned_has_lower_draft_relevant_mae": learned_has_lower_selection_mae,
                 "bootstrap_ci_supports_learned": bootstrap_supports_learned,
+                "pooled_mae_safety_gate_passed": pooled_mae_safety_gate_passed,
+                "total_top_n_capture_guard_passed": (
+                    total_capture_guard_passed if capture_guard_required else None
+                ),
+                "reference_baseline_top_n_capture_rate": baseline_capture,
+                "best_learned_top_n_capture_rate": learned_capture,
                 "best_learned_name": best_learned[3] if best_learned is not None else None,
                 "best_learned_value": (
-                    metrics_lookup[best_learned]["validation_mae"]
+                    metrics_lookup[best_learned][selection_metric_key]
                     if best_learned is not None
                     else None
                 ),
                 "best_learned_mae_improvement": (
-                    baseline_mae - learned_mae if learned_mae is not None else None
+                    baseline_selection_mae - learned_selection_mae
+                    if learned_selection_mae is not None
+                    else None
                 ),
                 "best_learned_vs_baseline_bootstrap": comparison,
                 "test_season": test_season,
@@ -525,12 +687,37 @@ def select_champions(
         )
 
     return {
-        "selection_metric": "pooled_validation_mae",
+        "selection_metric": (
+            "draft_relevant_validation_mae_with_pooled_safety_gate"
+            if draft_relevance_policy is not None
+            else "pooled_validation_mae"
+        ),
         "selection_rule": (
-            "Select on pooled validation MAE with a paired-bootstrap uncertainty gate; "
-            "learned must be strictly lower than the best transparent baseline and its "
-            "learned-minus-baseline 95% CI upper bound must be below zero. Ties and "
-            "inconclusive improvements retain the baseline."
+            "Select on a fixed cutoff-safe draft-relevant cohort. A learned candidate must "
+            "lower cohort MAE with a paired-bootstrap 95% CI below zero, remain within the "
+            "configured pooled-MAE tolerance, and preserve total-points top-N capture."
+            if draft_relevance_policy is not None
+            else (
+                "Select on pooled validation MAE with a paired-bootstrap uncertainty gate; "
+                "learned must be strictly lower than the best transparent baseline and its "
+                "learned-minus-baseline 95% CI upper bound must be below zero. Ties and "
+                "inconclusive improvements retain the baseline."
+            )
+        ),
+        "draft_relevance_policy": (
+            {
+                "anchor_target": TARGET_FANTASY_POINTS_TOTAL,
+                "anchor_baseline": draft_relevance_policy.anchor_baseline,
+                "top_n_by_position": dict(draft_relevance_policy.top_n_by_position),
+                "pooled_mae_regression_tolerance": (
+                    draft_relevance_policy.pooled_mae_regression_tolerance
+                ),
+                "max_total_top_n_capture_regression": (
+                    draft_relevance_policy.max_total_top_n_capture_regression
+                ),
+            }
+            if draft_relevance_policy is not None
+            else None
         ),
         "validation_seasons": list(selection_seasons),
         "test_season": test_season,
@@ -550,6 +737,91 @@ class _CandidatePrediction:
     entity_id: str
     actual_value: float | None
     predicted_value: float
+
+
+def _draft_relevant_validation_keys(
+    candidate_groups: Mapping[
+        tuple[str, str, str, str], list[_CandidatePrediction]
+    ],
+    validation_seasons: Sequence[int],
+    policy: DraftRelevancePolicy,
+) -> dict[str, set[tuple[int, str]]]:
+    """Freeze one cutoff-safe cohort shared by every candidate and target."""
+
+    positions = sorted({key[0] for key in candidate_groups})
+    output: dict[str, set[tuple[int, str]]] = {}
+    for position in positions:
+        anchor_key = (
+            position,
+            TARGET_FANTASY_POINTS_TOTAL,
+            "baseline",
+            policy.anchor_baseline,
+        )
+        anchor_rows = candidate_groups.get(anchor_key)
+        if anchor_rows is None:
+            raise ValueError(
+                "Draft-relevant selection requires the cutoff-safe anchor "
+                f"{position}/{TARGET_FANTASY_POINTS_TOTAL}/baseline/"
+                f"{policy.anchor_baseline}."
+            )
+        top_n = policy.top_n_for(position)
+        selected: set[tuple[int, str]] = set()
+        for season in validation_seasons:
+            season_rows = [row for row in anchor_rows if row.prediction_season == season]
+            if len(season_rows) < top_n:
+                raise ValueError(
+                    f"Draft-relevant anchor {position}/{season} has {len(season_rows)} "
+                    f"rows; {top_n} are required."
+                )
+            ordered = sorted(
+                season_rows,
+                key=lambda row: (-row.predicted_value, row.entity_id),
+            )
+            selected.update((season, row.entity_id) for row in ordered[:top_n])
+        output[position] = selected
+    return output
+
+
+def _mean_annual_top_n_capture(
+    rows: Sequence[_CandidatePrediction],
+    validation_seasons: Sequence[int],
+    *,
+    top_n: int,
+) -> float:
+    """Measure mean annual actual/predicted top-N overlap without pooling seasons."""
+
+    captures: list[float] = []
+    for season in validation_seasons:
+        season_rows = [
+            row
+            for row in rows
+            if row.prediction_season == season and row.actual_value is not None
+        ]
+        if len(season_rows) < top_n:
+            raise ValueError(
+                f"Top-N capture for {season} has {len(season_rows)} evaluable rows; "
+                f"{top_n} are required."
+            )
+        metrics = regression_metrics(
+            (row.actual_value for row in season_rows),
+            (row.predicted_value for row in season_rows),
+            top_n=top_n,
+            entity_ids=(row.entity_id for row in season_rows),
+        )
+        capture = metrics["top_n_capture_rate"]
+        if capture is None:
+            raise ValueError(f"Top-N capture is unavailable for validation season {season}.")
+        captures.append(float(capture))
+    return math.fsum(captures) / len(captures)
+
+
+def _signed_bias(rows: Sequence[_CandidatePrediction]) -> float | None:
+    errors = [
+        row.predicted_value - row.actual_value
+        for row in rows
+        if row.actual_value is not None
+    ]
+    return math.fsum(errors) / len(errors) if errors else None
 
 
 def _paired_values(
@@ -782,6 +1054,7 @@ def _bootstrap_candidate_pair(
     reference_rows: Sequence[_CandidatePrediction],
     validation_seasons: Sequence[int],
     *,
+    included_keys: set[tuple[int, str]] | None = None,
     n_resamples: int,
     seed: int,
 ) -> dict[str, int | float | str | None]:
@@ -789,11 +1062,19 @@ def _bootstrap_candidate_pair(
         (row.prediction_season, row.entity_id): row
         for row in candidate_rows
         if row.prediction_season in validation_seasons and row.actual_value is not None
+        and (
+            included_keys is None
+            or (row.prediction_season, row.entity_id) in included_keys
+        )
     }
     reference = {
         (row.prediction_season, row.entity_id): row
         for row in reference_rows
         if row.prediction_season in validation_seasons and row.actual_value is not None
+        and (
+            included_keys is None
+            or (row.prediction_season, row.entity_id) in included_keys
+        )
     }
     keys = sorted(candidate)
     return paired_bootstrap_mae_difference(

@@ -34,7 +34,7 @@ The current local interface uses Streamlit's native dark theme with Inter body t
 - the main recommendation is visually dominant, with smaller strong alternatives and a compact roster card beside it;
 - QB, RB, WR, and TE use consistent position colors in cards, tables, rosters, and draft activity;
 - the available-player table pins the action, rank, and player columns while trimming the live view to the most useful fields;
-- Player rankings pins rank and player while retaining the fuller projection, tier, floor, ceiling, and VORP comparison; and
+- Player rankings pins consensus rank and player while retaining the experimental health-neutral model rank, projection, and VORP comparison; and
 - detailed projection, ADP, and live-news limitations remain available in badges and expandable data notes, but no longer crowd the primary pick workflow.
 
 These are visual acceptance targets for local human testing, not a claim of mobile or cross-browser certification.
@@ -67,42 +67,111 @@ Select **Start draft** for this first walkthrough. For a full-PPR QB/RB/WR/TE/FL
 
 At your pick, the top of the page should answer three questions without another screen:
 
-1. Who is the best projected pick now?
+1. Who is the best health-neutral projected pick now?
 2. Why is that player above the alternatives?
 3. Is next-pick market timing available, or is it honestly missing?
 
-The main recommendation combines the model's season projection, value above the league-specific replacement player, the drop to the next available player at that position, and fit with your current roster. It works without ADP. Its bordered card should be the clearest element on your turn, followed by the smaller strong-alternative cards and your position-colored roster summary. In the current production build, 0 of 203 compatible QB/RB/WR/TE market identities are reviewed, so ADP and the estimated chance that a player lasts to your next turn are unavailable for every compatible player. If reviewed linkage is added later, the app may show that timing; missing timing is never displayed as zero.
+The main recommendation combines projected points per game scaled to the same 17 healthy games for
+every player, value above the league-specific replacement player, the drop to the next available
+player at that position, and fit with your current roster. The available-player board is ordered by
+FantasyPros consensus when that reviewed source is present; the model remains a secondary signal.
+The bordered recommendation card should be the clearest element on your turn,
+followed by the smaller strong-alternative cards and your position-colored roster summary. The
+enhanced simulation currently has 877 of 1,278 compatible FFC/Sleeper observations mapped (68.6%),
+below its deliberately strict 100% gate. Current ADP can appear in the player-reference workspace,
+but estimated next-turn survival remains unavailable in the strict simulation until residual
+identities are reviewed. Missing timing is never displayed as zero.
 
 Use the main **Draft Player Name** button or **Record my pick** in the available-player table to record your selection.
 
-### 3. Record every league pick
+### 3. Record real picks or simulate a practice room
 
-This is a manual live tracker for the supported no-K/DST preset. **Record every QB/RB/WR/TE selection in draft order, including opponents' picks—not only your picks.** The app determines the team on the clock from snake order. On an opponent's turn, the available-player board should appear before your roster and its row action should read **Record taken**. On your turn, the recommendation and roster should appear first and the row action should read **Record my pick**. Each recorded player should immediately disappear from the available table. When the draft reaches your slot again, the recommendation must recalculate from the remaining players and your roster. Do not use this workflow for a league that drafts kicker, team defense, or another unsupported position, because those selections cannot currently be recorded or skipped honestly.
+For a real draft, **record every QB/RB/WR/TE selection in draft order, including opponents' picks—not only your picks.** For a practice draft, select **Sim to my pick** after making your selection. The app will make deterministic projection- and roster-aware picks for every opponent, persist them on the normal draft board, and stop exactly when your team is on the clock. These picks are a useful mock-draft approximation, not learned predictions of specific human managers.
+
+The app determines the team on the clock from snake order. On an opponent's turn, the available-player board should appear before your roster and its row action should read **Record taken**. On your turn, the recommendation and roster should appear first and the row action should read **Record my pick**. Each recorded or simulated player should immediately disappear from the available table. When the draft reaches your slot again, the recommendation must recalculate from the remaining players and your roster. Do not use this workflow for a league that drafts kicker, team defense, or another unsupported position, because those selections cannot currently be recorded or skipped honestly.
 
 Test this sequence:
 
 1. Draft the recommended player at your first pick.
-2. Record several opponent picks using search and **Record taken**.
-3. Confirm drafted players disappear everywhere.
-4. Use **Undo last pick** and confirm the player returns.
+2. Select **Sim to my pick** and confirm opponent picks fill the board until your next turn.
+3. Undo the latest simulated pick, then record a different opponent with **Record taken**.
+4. Confirm drafted players disappear everywhere.
 5. Refresh the browser and confirm the session and picks remain.
-6. Continue until your next turn and compare the changed recommendation.
+6. Compare the changed recommendation at your next turn.
 7. Under **Draft activity**, confirm **Draft board** is the default view: rounds are rows, draft slots are columns, positions are color-coded, your team column is highlighted, and the current cell says **YOUR PICK** or **ON THE CLOCK**.
 8. Switch to **Pick log** and confirm the same selections appear in reverse chronological order.
 
-The app does not yet synchronize Sleeper or ESPN drafts. It also does not ingest live injury, suspension, or depth-chart news, so check a current news source before acting on a recommendation.
+The app does not yet synchronize Sleeper or ESPN drafts. It deliberately does not predict missed games: every preseason ranking assumes 17 healthy games. It also does not ingest live injury, suspension, or depth-chart news, so check a current news source before acting on a recommendation.
 
 ### 4. Check Player rankings
 
-Open **Player rankings** before or during the practice draft. Change league size, search for players, and filter positions with the compact controls. Use a quick Top 50/100/200/300 view during normal comparison or choose **All players** when you need the complete filtered board. Overall rank should use value over replacement, not raw points across positions. That prevents a quarterback from automatically outranking every running back or receiver merely because quarterback scoring totals are larger.
+Open **Player rankings** before or during the practice draft. Change league size, search for players, and filter positions with the compact controls. Use a quick Top 50/100/200/300 view during normal comparison or choose **All players** when you need the complete filtered board. **Consensus rank** is the primary order and is derived from the reviewed FantasyPros composite. **Experimental model rank** is secondary: it multiplies predicted points per game by 17 for everyone and then uses value over replacement across positions.
 
-Confirm rank and player remain pinned as you scroll horizontally, position cells use the same colors as Draft Assistant, and each row clearly shows projection, position rank, tier, floor, ceiling, and replacement value. The ADP column is hidden because reviewed market mappings are 0/203; the projection ranking should still work. For the 233 rookie heuristic rows, floor and ceiling equal the point estimate and the risk label is **Not estimated**—that equality is a limitation, not evidence of certainty. Open **Data and confidence notes** to confirm those honest warnings remain available without dominating the board.
+Confirm consensus rank and player remain pinned as you scroll horizontally, position cells use the
+same colors as Draft Assistant, and each row clearly shows experimental model rank, model-versus-
+market delta, 17-game projection, position rank, and replacement value. Positive delta means the
+model ranks the player earlier than the market. A warning should appear for gaps of 12 ranks or
+more. The model ranking must continue working whether or not strict market simulation is ready.
+For the 233 rookie heuristic rows, floor and ceiling equal the point
+estimate and the risk label is **Not estimated**—that equality is a limitation, not evidence of
+certainty. Open **Data and confidence notes** to confirm those honest warnings remain available
+without dominating the board.
 
-### 5. Open Draft report
+### 5. Check Player Evaluation
+
+Open **Player Export List** and scroll to the bottom. **Upload FantasyPros Overall ADP** is the one
+supported aggregate source-of-truth workflow:
+
+1. Sign in to FantasyPros in your normal browser. The app does not perform this login.
+2. Open the FantasyPros **Overall ADP** export and manually download its CSV.
+3. Confirm the untouched CSV contains `Rank`, `Player (Bye)`, `POS`, `Yahoo`, `Sleeper`,
+   `RTSports`, and `AVG`. FantasyPros may also include `Real-Time`; the app ignores that field.
+   Do not rename the required headers or select a platform in the app.
+4. Select that one complete CSV at the bottom of Player Export List. Selection automatically
+   validates, archives, loads, and refreshes the table; there is no preview or confirmation button.
+
+A successful selection preserves the exact original CSV bytes and creates four immutable
+**overall** snapshots: `yahoo`, `sleeper`, `rtsports`, and `fantasypros`. The CSV's `AVG` value is
+displayed as the **FantasyPros composite**. It is source evidence from FantasyPros and is not
+recalculated from Yahoo, Sleeper, and RTSports. A player omitted from a later complete export will
+be absent from that new snapshot; older snapshots remain archived rather than being overwritten.
+
+Identity remains conservative. Exact IDs or a unique supported identity match may resolve a row;
+ambiguous names remain unresolved and do not populate a different player's ADP. Conflicting values
+for the same normalized player stop activation instead of being averaged or silently selected.
+The market table remains one canonical row per player after normalization. The verified import
+captured the original file at **2026-08-24 18:25:05 UTC** with SHA-256
+`9402d970666b6677aba3368fd69d6d8adecba360c8f55bce7dc44e2e7464a52d`. Re-selecting that identical
+file should report that the immutable archive was reused.
+
+Confirm the refreshed table has **1,368 players**, **276 with market data**, **927 platform
+observations**, and **165 complete comparisons**. Platform coverage should show Yahoo 165,
+Sleeper 228, RTSports 258, and FantasyPros 276 accepted board players. The archived snapshot quality
+is Yahoo 222 rows / 185 mapped / 37 unresolved; Sleeper 302 / 244 / 58; RTSports 328 / 280 / 48;
+and FantasyPros 370 / 299 / 71. Missing values remain blank rather than zero.
+
+Use **Consensus Rank** as the primary table order. It sorts FantasyPros AVG from earliest to latest;
+exact ties share a rank. **Experimental Model Rank** is the secondary projection reference under
+the default 12-team full-PPR **Standard** roster: 1 QB, 2 RB, 2 WR, 1 TE, 1 FLEX, and 7 bench spots,
+with no K/DST. **Model vs Market Delta** equals consensus rank minus model rank, so positive means
+the model likes the player more. The model assumes all players play 17 games. A market-only player
+without a supported projection may have a blank model rank; a projected player without FantasyPros
+AVG may have a blank consensus rank. Those blanks are expected and must not become zero.
+
+Because file selection imports immediately, do not select a shortened test copy as source of truth.
+The application reads the local file only. It does not store FantasyPros credentials or cookies,
+automate the login, or acquire the export itself. Because this project is inside OneDrive, the
+immutable local archive may still be synchronized by OneDrive or other backup software.
+
+Open **Player Market Consensus**, search for a player, and confirm the Fantasy Football Advice card
+does not invent a stance. Until the 2026 channel inventory and transcript corpus are built, it
+should say **Transcript corpus not built** and explain the future evidence fields.
+
+### 6. Open Draft report
 
 Open the report before and after completing a test draft. An incomplete report should identify itself as provisional. Check positional capital, lineup or roster coverage, market-value evidence, risk labels, and missing-data limitations. Missing ADP or uncertainty must remain unavailable rather than silently becoming zero.
 
-### 6. Use Advanced only when you need it
+### 7. Use Advanced only when you need it
 
 The normal draft path should not require these pages:
 
@@ -115,7 +184,7 @@ The normal draft path should not require these pages:
 
 If the core Draft Assistant forces you into one of these pages to answer “who should I pick?”, record that as a usability bug.
 
-### 7. Optional League history test
+### 8. Optional League history test
 
 Before importing personal evidence, confirm that the empty state explains:
 

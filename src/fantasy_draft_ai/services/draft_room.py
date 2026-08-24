@@ -20,7 +20,7 @@ from fantasy_draft_ai.recommendations.config import DraftEngineConfig
 from fantasy_draft_ai.rules.models import LeagueRules
 from fantasy_draft_ai.services.adp_market import AdpMarketBoard, AdpMarketRow
 from fantasy_draft_ai.services.projections import (
-    TARGET_FANTASY_POINTS_TOTAL,
+    TARGET_FANTASY_POINTS_PER_GAME,
     PlayerProjection,
     ProjectionBoard,
 )
@@ -28,6 +28,9 @@ from fantasy_draft_ai.services.projections import (
 STATE_READY = "state_ready"
 IDENTITY_MAPPING_REQUIRED = "identity_mapping_required"
 RECOMMENDATION_READY = "recommendation_ready"
+DRAFT_FULL_SEASON_GAMES = 17
+HEALTH_NEUTRAL_PROJECTION_SOURCE = "health_neutral_ppg"
+PREFERRED_CONSENSUS_SOURCE = "fantasypros"
 
 
 class DraftRoomServiceError(ValueError):
@@ -188,36 +191,68 @@ def prepare_draft_room(
         position for slot in rules.flex_slots for position in slot.eligible
     )
     eligible_positions = projection_positions & rules_positions
-    compatible_market = tuple(
-        row for row in scoped_market if row.position.strip().upper() in eligible_positions
-    )
-    excluded_market = tuple(
-        row for row in scoped_market if row.position.strip().upper() not in eligible_positions
-    )
-    mapped_rows = tuple(row for row in compatible_market if _canonical_market_id(row) is not None)
-    mapped_ids = tuple(_required_canonical_market_id(row) for row in mapped_rows)
-    duplicate_mapped_ids = tuple(
-        sorted(player_id for player_id, count in Counter(mapped_ids).items() if count > 1)
-    )
     projection_by_id = {row.player_id: row for row in projection_board.rows}
-    unmatched_ids = tuple(sorted(set(mapped_ids) - set(projection_by_id)))
-    conflicting_positions = tuple(
+    market_only_mapped = tuple(
+        row
+        for row in scoped_market
+        if (player_id := _canonical_market_id(row)) is not None
+        and player_id not in projection_by_id
+    )
+    projected_mapped = tuple(
+        row
+        for row in scoped_market
+        if (player_id := _canonical_market_id(row)) is not None
+        and player_id in projection_by_id
+    )
+    conflicting_market = tuple(
+        row
+        for row in projected_mapped
+        if row.position.strip().upper()
+        != projection_by_id[_required_canonical_market_id(row)].position.strip().upper()
+    )
+    excluded_keys = {
+        (row.snapshot_id, row.raw_source_row_id)
+        for row in (*market_only_mapped, *conflicting_market)
+    }
+    compatible_market = tuple(
+        row
+        for row in scoped_market
+        if row.position.strip().upper() in eligible_positions
+        and (row.snapshot_id, row.raw_source_row_id) not in excluded_keys
+    )
+    excluded_market = tuple(row for row in scoped_market if row not in compatible_market)
+    mapped_rows = tuple(row for row in compatible_market if _canonical_market_id(row) is not None)
+    duplicate_mapped_ids = tuple(
         sorted(
             {
                 player_id
-                for row in mapped_rows
-                if (player_id := _required_canonical_market_id(row)) in projection_by_id
-                and row.position.strip().upper()
-                != projection_by_id[player_id].position.strip().upper()
+                for (player_id, _source, _snapshot_id), count in Counter(
+                    (
+                        _required_canonical_market_id(row),
+                        row.source,
+                        row.snapshot_id,
+                    )
+                    for row in projected_mapped
+                ).items()
+                if count > 1
             }
         )
     )
+    unmatched_ids = tuple(
+        sorted({_required_canonical_market_id(row) for row in market_only_mapped})
+    )
+    conflicting_positions = tuple(
+        sorted({_required_canonical_market_id(row) for row in conflicting_market})
+    )
 
-    unusable_ids = set(duplicate_mapped_ids) | set(unmatched_ids) | set(conflicting_positions)
+    unusable_ids = set(duplicate_mapped_ids)
+    market_candidates: dict[str, list[AdpMarketRow]] = {}
+    for row in mapped_rows:
+        player_id = _required_canonical_market_id(row)
+        if player_id not in unusable_ids:
+            market_candidates.setdefault(player_id, []).append(row)
     market_by_id = {
-        _required_canonical_market_id(row): row
-        for row in mapped_rows
-        if _required_canonical_market_id(row) not in unusable_ids
+        player_id: _select_market_row(rows) for player_id, rows in market_candidates.items()
     }
     players = tuple(
         _freeze_projection(row, market_by_id.get(row.player_id))
@@ -386,17 +421,27 @@ def _freeze_projection(
     projection: PlayerProjection,
     market: AdpMarketRow | None,
 ) -> FrozenDraftPlayer:
-    interval = projection.target(TARGET_FANTASY_POINTS_TOTAL)
+    """Freeze a draft-only, health-neutral 17-game interval from Phase 4 PPG.
+
+    The archived ``games_active`` and ``fantasy_points_total`` targets remain intact
+    for model evaluation, but neither is allowed to discount the live draft board.
+    """
+
+    interval = projection.target(TARGET_FANTASY_POINTS_PER_GAME)
+    projection_method = (
+        f"fantasy_points_per_game_x_{DRAFT_FULL_SEASON_GAMES}_games"
+        f"[{interval.selected_source}:{interval.selected_name}]"
+    )
     return FrozenDraftPlayer(
         player_id=projection.player_id,
         display_name=projection.display_name,
         position=projection.position,
-        p10=interval.p10,
-        p50=interval.p50,
-        p90=interval.p90,
+        p10=interval.p10 * DRAFT_FULL_SEASON_GAMES,
+        p50=interval.p50 * DRAFT_FULL_SEASON_GAMES,
+        p90=interval.p90 * DRAFT_FULL_SEASON_GAMES,
         prediction_status=projection.prediction_status,
-        projection_source=interval.selected_source,
-        projection_method=interval.selected_name,
+        projection_source=HEALTH_NEUTRAL_PROJECTION_SOURCE,
+        projection_method=projection_method,
         market_source=None if market is None else market.source,
         market_snapshot_id=None if market is None else market.snapshot_id,
         market_captured_at=None if market is None else market.captured_at,
@@ -442,6 +487,28 @@ def _required_canonical_market_id(row: AdpMarketRow) -> str:
     return value
 
 
+def _select_market_row(rows: list[AdpMarketRow]) -> AdpMarketRow:
+    """Prefer the uploaded FantasyPros composite, then choose reproducibly.
+
+    The user-supplied FantasyPros AVG is the primary redraft consensus source. Direct
+    platform rows remain archived and visible in Player Evaluation, but they do not
+    silently replace the composite used by the live draft assistant.
+    """
+
+    preferred = [
+        row
+        for row in rows
+        if row.source.strip().casefold() == PREFERRED_CONSENSUS_SOURCE
+    ]
+    candidates = preferred or rows
+    latest_capture = max(row.captured_at for row in candidates)
+    latest_rows = (row for row in candidates if row.captured_at == latest_capture)
+    return min(
+        latest_rows,
+        key=lambda row: (row.snapshot_id, row.source, row.raw_source_row_id),
+    )
+
+
 def _market_readiness(
     *,
     projection_rows: int,
@@ -475,19 +542,9 @@ def _market_readiness(
     elif duplicate_mapped_ids:
         status = "duplicate_mapped_player_ids"
         message = (
-            "Multiple compatible market rows map to the same canonical player IDs: "
+            "Multiple rows in one compatible source snapshot map to the same canonical player "
+            "IDs: "
             f"{', '.join(duplicate_mapped_ids)}."
-        )
-    elif unmatched_ids:
-        status = "mapped_projection_required"
-        message = (
-            "Mapped ADP identities are absent from the projection board: "
-            f"{', '.join(unmatched_ids)}."
-        )
-    elif conflicting_positions:
-        status = "mapped_position_conflict"
-        message = (
-            f"Mapped ADP and projection positions conflict for: {', '.join(conflicting_positions)}."
         )
     elif coverage < required_market_coverage:
         status = IDENTITY_MAPPING_REQUIRED
@@ -500,7 +557,17 @@ def _market_readiness(
         positions = ", ".join(excluded_market_positions)
         message += (
             f" {excluded_market_rows} source rows ({positions}) remain archived and auditable "
-            "but are outside this ruleset's projected draftable-position coverage."
+            "but are outside the current projected-player/ruleset coverage."
+        )
+    if unmatched_ids:
+        message += (
+            f" {len(unmatched_ids)} mapped player IDs outside the active projection board were "
+            "ignored for draft recommendations."
+        )
+    if conflicting_positions:
+        message += (
+            f" Position-mismatched market observations for {len(conflicting_positions)} "
+            "projected player IDs were excluded from draft recommendations."
         )
     return DraftRoomReadiness(
         state_ready=True,

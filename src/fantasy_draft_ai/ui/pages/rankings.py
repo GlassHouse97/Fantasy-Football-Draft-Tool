@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from math import isfinite
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
 from fantasy_draft_ai.draft.pool import FrozenDraftPlayer
-from fantasy_draft_ai.recommendations.projection_baseline import build_projection_rankings
+from fantasy_draft_ai.recommendations.projection_baseline import (
+    ProjectionRankingRow,
+    build_projection_rankings,
+)
 from fantasy_draft_ai.ui.common import (
     position_cell_style,
     position_option_label,
@@ -28,6 +32,7 @@ from fantasy_draft_ai.ui.redraft_presets import (
 _TEAM_COUNTS = (8, 10, 12, 14, 16)
 _ROSTER_PRESET_KEYS = tuple(preset.key for preset in REDRAFT_ROSTER_PRESETS)
 _SHOW_OPTIONS = ("Top 50", "Top 100", "Top 200", "Top 300", "All players")
+_EXTREME_RANK_GAP = 12
 
 
 def _fallback_projection_count(players: Sequence[FrozenDraftPlayer]) -> int:
@@ -43,8 +48,9 @@ def render() -> None:
     context = load_app_context()
     render_page_header(
         "Player rankings",
-        "Your redraft board",
-        "Compare model projections and league-adjusted draft value before or during a draft.",
+        "Your consensus-first redraft board",
+        "Start with FantasyPros market consensus, then use the health-neutral model as a "
+        "secondary comparison.",
     )
     with st.container(border=True):
         st.caption("Tune the board to your league before comparing players.")
@@ -93,8 +99,15 @@ def render() -> None:
     if not preparation.readiness.state_ready:
         st.error(preparation.readiness.state_message)
         return
-    rankings = build_projection_rankings(rules, preparation.players)
-    positions = sorted({row.position for row in rankings})
+    model_rankings = build_projection_rankings(rules, preparation.players)
+    consensus_rankings = _consensus_rankings(model_rankings)
+    rankings = tuple(
+        sorted(
+            model_rankings,
+            key=lambda row: _consensus_sort_key(row, consensus_rankings),
+        )
+    )
+    positions = sorted({row.position for row in model_rankings})
     selected_position_value = st.pills(
         "Positions",
         positions,
@@ -117,7 +130,7 @@ def render() -> None:
     if filtered:
         render_section_header(
             "Top of the board",
-            "The strongest league-adjusted values under the selected roster format.",
+            "The earliest FantasyPros consensus values under your selected filters.",
             icon=":material/workspace_premium:",
         )
         with st.container(horizontal=True):
@@ -125,7 +138,10 @@ def render() -> None:
                 with st.container(border=True, width=320, height="stretch"):
                     with st.container(horizontal=True):
                         render_position_badge(row.position, f"{row.position}{row.position_rank}")
-                        st.badge(f"Overall #{row.overall_rank}", color="gray")
+                        consensus_rank = consensus_rankings.get(row.player_id)
+                        if consensus_rank is not None:
+                            st.badge(f"Consensus #{consensus_rank}", color="green")
+                        st.badge(f"Model #{row.overall_rank}", color="gray")
                         st.badge(f"Tier {row.tier}", color="violet")
                     st.subheader(row.display_name)
                     st.metric(
@@ -142,7 +158,7 @@ def render() -> None:
         )
     render_section_header(
         "Full player board",
-        "Sort any column. Rank and player stay pinned while you scan projections.",
+        "Consensus controls the default order. Sort any column to explore model differences.",
         icon=":material/leaderboard:",
     )
     fallback_count = _fallback_projection_count(preparation.players)
@@ -154,12 +170,17 @@ def render() -> None:
         )
     ranking_records = [
         {
-            "Rank": row.overall_rank,
+            "Consensus rank": consensus_rankings.get(row.player_id),
             "Player": row.display_name,
             "Pos": row.position,
             "Pos rank": row.position_rank,
             "Tier": row.tier,
-            "Projection": row.p50,
+            "Experimental model rank": row.overall_rank,
+            "Model vs market": _rank_delta(
+                consensus_rankings.get(row.player_id),
+                row.overall_rank,
+            ),
+            "17-game projection": row.p50,
             "VORP": row.p50_vorp,
             "Floor": row.p10,
             "Ceiling": row.p90,
@@ -171,12 +192,14 @@ def render() -> None:
     ranking_frame = pd.DataFrame.from_records(
         ranking_records,
         columns=(
-            "Rank",
+            "Consensus rank",
             "Player",
             "Pos",
             "Pos rank",
             "Tier",
-            "Projection",
+            "Experimental model rank",
+            "Model vs market",
+            "17-game projection",
             "VORP",
             "Floor",
             "Ceiling",
@@ -186,14 +209,37 @@ def render() -> None:
     )
     market_available = not ranking_frame["ADP"].isna().all()
     if not market_available:
-        ranking_frame = ranking_frame.drop(columns=["ADP"])
+        ranking_frame = ranking_frame.drop(
+            columns=["Consensus rank", "Model vs market", "ADP"]
+        )
     ranking_column_config: dict[str, Any] = {
-        "Rank": st.column_config.NumberColumn(format="#%d", pinned=True, width="small"),
+        "Consensus rank": st.column_config.NumberColumn(
+            format="#%d",
+            pinned=True,
+            width="small",
+            help="Primary rank derived from the reviewed FantasyPros composite ADP.",
+        ),
         "Player": st.column_config.TextColumn(pinned=True, width="medium"),
         "Pos": st.column_config.TextColumn(width="small"),
         "Pos rank": st.column_config.NumberColumn(format="#%d", width="small"),
         "Tier": st.column_config.NumberColumn(format="%d", width="small"),
-        "Projection": st.column_config.NumberColumn(format="%.1f"),
+        "Experimental model rank": st.column_config.NumberColumn(
+            format="#%d",
+            width="small",
+            help="Health-neutral PPG model rank under this league's replacement values.",
+        ),
+        "Model vs market": st.column_config.NumberColumn(
+            format="%+d",
+            width="small",
+            help=(
+                "Consensus rank minus model rank. Positive means the model likes the "
+                "player more than the market."
+            ),
+        ),
+        "17-game projection": st.column_config.NumberColumn(
+            format="%.1f",
+            help="Projected fantasy points per game multiplied by 17 for every player.",
+        ),
         "VORP": st.column_config.NumberColumn(
             "VORP",
             format="%+.1f",
@@ -204,6 +250,24 @@ def render() -> None:
     }
     if market_available:
         ranking_column_config["ADP"] = st.column_config.NumberColumn(format="%.1f")
+        extreme_count = sum(
+            abs(delta) >= _EXTREME_RANK_GAP
+            for row in filtered
+            if (
+                delta := _rank_delta(
+                    consensus_rankings.get(row.player_id),
+                    row.overall_rank,
+                )
+            )
+            is not None
+        )
+        if extreme_count:
+            st.warning(
+                f"{extreme_count:,} shown players differ by at least {_EXTREME_RANK_GAP} "
+                "ranks between consensus and the experimental model. Review those gaps; "
+                "do not treat them as automatic sleepers or fades.",
+                icon=":material/warning:",
+            )
     st.dataframe(
         ranking_frame.style.map(position_cell_style, subset=["Pos"]),
         hide_index=True,
@@ -220,7 +284,8 @@ def render() -> None:
     st.caption(
         f"Showing {len(filtered):,} of {len(rankings):,} draftable projected players for a "
         f"{team_count}-team full-PPR league using the {preset.label} roster. {market_note} "
-        "This does not remove any player from the model ranking."
+        "Every model projection assumes a full 17-game season; no injury probability changes "
+        "the order."
     )
     with st.expander("Data and confidence notes", icon=":material/info:"):
         if fallback_count:
@@ -232,16 +297,68 @@ def render() -> None:
                 "estimated; treat those rankings as lower-confidence estimates."
             )
         st.warning(
-            "These rankings do not yet include live injury, suspension, or depth-chart news. "
-            "Check current player news before your draft."
+            "The model deliberately assumes every player is healthy for 17 games. It does not "
+            "predict injuries or include live suspension and depth-chart news, so check current "
+            "player status before drafting."
         )
     with st.expander("How these rankings work", icon=":material/info:"):
         st.write(
-            "Overall rank uses projected season points above the replacement player for each "
-            "position. Replacement changes with league size and roster demand, so a quarterback "
-            "is not ranked above a receiver merely because quarterbacks score more raw points."
+            "Consensus rank is the primary board order and comes from FantasyPros AVG. The "
+            "experimental model starts with projected points per game, multiplies every player "
+            "by the same 17 games, and then compares points above the replacement player at each "
+            "position."
         )
         st.write(
             "Floor and ceiling are model uncertainty bounds. Tiers are position-rank bands the "
             "size of one league, not learned player clusters."
         )
+
+
+def _consensus_rankings(
+    rows: Sequence[ProjectionRankingRow],
+) -> dict[str, int]:
+    """Create deterministic competition ranks from reviewed average-pick values."""
+
+    usable = sorted(
+        (
+            row
+            for row in rows
+            if row.average_pick is not None
+            and isfinite(row.average_pick)
+            and row.average_pick > 0
+        ),
+        key=lambda row: (
+            row.average_pick if row.average_pick is not None else float("inf"),
+            row.display_name.casefold(),
+            row.player_id,
+        ),
+    )
+    output: dict[str, int] = {}
+    prior_pick: float | None = None
+    prior_rank = 0
+    for ordinal, row in enumerate(usable, start=1):
+        if row.average_pick is None:  # narrowed above; retained for strict typing
+            continue
+        current_pick = row.average_pick
+        if prior_pick is None or current_pick != prior_pick:
+            prior_pick = current_pick
+            prior_rank = ordinal
+        output[row.player_id] = prior_rank
+    return output
+
+
+def _consensus_sort_key(
+    row: ProjectionRankingRow,
+    consensus_rankings: dict[str, int],
+) -> tuple[int, int, int, str]:
+    consensus_rank = consensus_rankings.get(row.player_id)
+    return (
+        1 if consensus_rank is None else 0,
+        consensus_rank if consensus_rank is not None else 10**9,
+        row.overall_rank,
+        row.player_id,
+    )
+
+
+def _rank_delta(consensus_rank: int | None, model_rank: int) -> int | None:
+    return None if consensus_rank is None else consensus_rank - model_rank

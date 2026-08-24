@@ -6,7 +6,12 @@ A linear model applies one straight-line effect at a time. Football development 
 
 Gradient boosting builds a sequence of small decision trees. Each new tree concentrates on patterns the current ensemble still misses. The final estimate adds their contributions together. Phase 4 uses histogram gradient boosting as the nonlinear rung of the model ladder because it works well with tabular data, represents thresholds and interactions, and does not require a neural network.
 
-The boosted candidate is not automatically promoted. It must cover the same validation player-seasons as its competitors, earn lower pooled validation MAE than the best transparent baseline, and keep the paired-bootstrap 95% interval for learned-minus-baseline MAE entirely below zero. Ties and lower-MAE results whose interval crosses zero are retained as baseline wins because the learned improvement is inconclusive.
+The boosted candidate is not automatically promoted. It must cover the same validation
+player-seasons as its competitors and lower MAE on a fixed, cutoff-safe draft-relevant cohort. Its
+paired-bootstrap 95% interval for learned-minus-baseline cohort MAE must remain below zero, its
+pooled MAE must stay within the configured safety tolerance, and total-points top-N capture cannot
+regress beyond the ranking guard. Ties, inconclusive improvements, or failures of either safety
+guard retain the transparent baseline.
 
 ## Formula and statistical idea
 

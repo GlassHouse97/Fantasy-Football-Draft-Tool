@@ -213,6 +213,61 @@ class DraftRepository:
             payload_builder=payload,
         )
 
+    def record_pick_batch(
+        self,
+        session_id: str,
+        player_ids: tuple[str, ...],
+        *,
+        expected_version: int,
+        command_id: str,
+    ) -> DraftState:
+        """Atomically append an ordered group of ordinary pick events."""
+
+        if not player_ids:
+            return self.load_state(session_id)
+        self.initialize()
+        with duckdb.connect(str(self.path)) as connection:
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                state = self._load_state(connection, session_id)
+                self._require_version(state, expected_version)
+                players = {
+                    player.player_id: player
+                    for player in self._load_players(connection, session_id)
+                }
+                for batch_index, player_id in enumerate(player_ids, start=1):
+                    player = players.get(player_id)
+                    if player is None:
+                        raise KeyError(
+                            f"Player {player_id} is not in frozen session {session_id}."
+                        )
+                    current = state.current_overall_pick
+                    if current is None or state.current_team_id is None:
+                        raise DraftStateError("The draft is complete.")
+                    event = self._build_event(
+                        state,
+                        "pick_made",
+                        {
+                            "overall_pick": current,
+                            "team_id": state.current_team_id,
+                            "player_id": player.player_id,
+                            "player_name": player.display_name,
+                            "position": player.position,
+                            "projected_points": player.p50,
+                        },
+                        f"{command_id}-batch-{batch_index}",
+                    )
+                    result = apply_event(state, event)
+                    event = replace(event, resulting_state_fingerprint=result.fingerprint())
+                    self._insert_event(connection, event)
+                    state = result
+                self._update_session_state(connection, state)
+                connection.execute("COMMIT")
+                return state
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+
     def undo_last(
         self,
         session_id: str,
@@ -540,6 +595,13 @@ class DraftRepository:
         state: DraftState,
     ) -> None:
         self._insert_event(connection, event)
+        self._update_session_state(connection, state)
+
+    @staticmethod
+    def _update_session_state(
+        connection: duckdb.DuckDBPyConnection,
+        state: DraftState,
+    ) -> None:
         status = "complete" if state.complete else "active"
         connection.execute(
             """

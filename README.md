@@ -11,18 +11,19 @@ The runnable local foundation includes:
 - a packaged Python CLI and recommendation-first local Streamlit application;
 - immutable raw-file archives with SHA-256 manifests;
 - a DuckDB warehouse schema for the project’s canonical tables;
-- current `nflreadpy` and Fantasy Football Calculator adapters with offline reuse;
+- current `nflreadpy`, Fantasy Football Calculator, and explicit Sleeper ADP adapters with offline reuse;
 - immutable nflverse/PFR snap-count captures and transactional participation loading;
-- a validated manual ESPN ADP import path, without scraping or login automation;
+- a validated in-app FantasyPros Overall ADP CSV upload path that preserves the supplied export and publishes Yahoo, Sleeper, RTSports, and FantasyPros composite snapshots without login automation;
 - an auditable player-identity review queue and durable source-ID mapping registry;
 - immutable, validated manual identity overrides that survive nflverse reloads;
 - deterministic league-rule normalization and fingerprints;
 - configurable fantasy scoring, explicit FLEX/SUPERFLEX eligibility, and two replacement-value definitions;
 - cutoff-safe player-season features, separately persisted future targets, and source provenance;
 - five transparent projection baselines evaluated on expanding 2020-2025 folds;
-- position-specific Ridge and histogram gradient-boosting models with validation-gated champions;
+- position-specific Ridge and histogram gradient-boosting models with cutoff-safe, draft-relevance-aware validation gates;
 - a validated 2026 projection publication with P10/P50/P90 displays, player explanations, and explicit labels for unvalidated rookie fallbacks;
-- idempotent, hash-verified normalization of immutable FFC and manual ESPN ADP captures;
+- consensus-first current-player tables that prefer FantasyPros composite ADP when it is present and keep the health-neutral model rank visibly experimental;
+- idempotent, hash-verified normalization of immutable FFC, Sleeper, and authorized FantasyPros aggregate ADP captures;
 - cutoff-safe ADP movement features with persistence, linear-trend, and exponentially weighted baselines;
 - a transparent next-pick availability distribution with source-reported spread evidence and labeled fallbacks;
 - an event-sourced snake-draft engine with immutable session pools, append-only picks, undo, replacement, and replay hashes;
@@ -39,7 +40,7 @@ The runnable local foundation includes:
 - reviewed historical player mappings, roster-construction features, drafted-only descriptions, and an explicit outcome-model evidence gate;
 - tests for data integrity, leakage, chronological evaluation, model selection, publication integrity, ADP idempotency, availability bounds, scoring, rules, and replacement value.
 
-Phases 0 through 8 from the master specification are implemented. The current product milestone refocuses that foundation on the actual draft-day job: start a supported 2026 full-PPR snake draft, record each QB/RB/WR/TE selection, and see the best projected pick when your team is on the clock. Projection-first guidance works with the current 1,367-player board and adapts to league size, replacement value, positional drop-off, and roster fit. Of those rows, 233 live rookies use unvalidated point-only heuristic fallbacks; their `P10=P50=P90`, and their risk is not estimated. Quick Start offers two built-in no-K/DST roster presets and cannot record kicker or team-defense selections, so it is not yet a complete live tracker for leagues that draft those positions. The stricter ADP/Monte Carlo layer remains separately locked because all 203 compatible QB/RB/WR/TE ADP rows still lack reviewed canonical mappings; current ADP and next-pick timing are therefore unavailable rather than invented. No championship probability is produced.
+Phases 0 through 8 from the master specification are implemented. The current product milestone refocuses that foundation on the actual draft-day job: start a supported 2026 full-PPR snake draft, record each QB/RB/WR/TE selection, and see the best available players when your team is on the clock. Accepted FantasyPros composite ADP is the primary default ordering when it is present; the separately labeled **Experimental Model Rank** adds rules-aware replacement value and positional context. Draft-facing model projections assume every player is healthy and available for all 17 regular-season games by scaling the served points-per-game projection. They do not estimate injuries or games missed. Live rookies remain explicitly unvalidated point-only heuristic fallbacks with no estimated risk range. Quick Start offers two built-in no-K/DST roster presets and cannot record kicker or team-defense selections, so it is not yet a complete live tracker for leagues that draft those positions. The stricter market-simulation layer remains separately gated by canonical mapping coverage. No championship probability is produced.
 
 ## Local setup (Windows PowerShell)
 
@@ -82,6 +83,8 @@ Start small while verifying your environment:
 ```powershell
 fantasy-draft data download-nflverse --start-season 2025 --end-season 2025
 fantasy-draft data load-nflverse
+fantasy-draft data snapshot-platform-player-ids
+fantasy-draft data snapshot-sleeper-adp --season 2026
 fantasy-draft data snapshot-ffc-adp --season 2026 --format ppr --teams 12
 fantasy-draft data import-espn-adp data\templates\espn_adp_snapshot_template.csv
 fantasy-draft data load-adp
@@ -91,7 +94,14 @@ fantasy-draft data audit
 
 Network commands preserve timestamped raw files. Add `--offline` to reuse an existing matching download without making a request. `load-nflverse` verifies one manifest-paired capture and its raw hashes, excludes only reported non-player placeholders, preserves curated identity mappings, and upserts nflverse weekly keys in one transaction. Unmentioned rows are never deleted by a potentially partial capture, and repeating the same manifest leaves canonical rows and counts unchanged.
 
-`review-identities` verifies the latest nflverse, FFC, and manual ESPN captures, refreshes the DuckDB review queue, and exports an editable worksheet to `data/processed/identity/identity_review_queue.csv`. Exact platform-ID evidence may resolve automatically. Name-based comparisons only propose candidates; they never create a confirmed mapping without human approval. FFC team-defense rows (`DEF`, `DST`, or `D/ST`) are explicitly excluded from player mapping.
+`review-identities` verifies the latest nflverse, FFC, and supported platform captures,
+refreshes the DuckDB review queue, and exports an editable worksheet to
+`data/processed/identity/identity_review_queue.csv`. Exact ESPN/Yahoo/Sleeper IDs resolve through
+canonical fields or the archived nflverse crosswalk. Name-based comparisons only propose
+candidates; they never create a confirmed mapping without human approval. Platform-ID ambiguity
+for an observed source row fails closed, while unrelated historical crosswalk collisions do not
+block another platform's review. FFC team-defense rows (`DEF`, `DST`, or `D/ST`) are explicitly
+excluded from player mapping.
 
 To approve, remap, or dismiss pending rows, edit the exported worksheet and fill in `resolution`, `reviewed_at`, and `reviewer`. A remap or dismissal also requires `notes`. Then apply the decisions:
 
@@ -124,13 +134,13 @@ Position evidence follows the same time boundary. Historical weekly or participa
 
 The validated PPR build produced 11,171 feature rows, 9,804 historical target rows, and 1,367 live 2026 rows without targets. Fifteen player-seasons contain a nonzero-stat game without complete mapped participation, and 28 historical target rows have unavailable active-game denominators; total points remain available while unsupported games-active and points-per-game values stay null. The quality report also discloses 1,117 scorers and 1,390 active players outside the preseason candidate proxy.
 
-Reproducibility uses three hashes: feature `d2bdda170fcbf88ccfe0b3f437615583a0684057eebe1fc12aa65463a47cf9cf`, target `dd759bbf87c146884e68425079b3a759d1d6d4bb434d5bccee6d9d91c98c56a9`, and combined build `f195dcb17a1a386b2f2003d87a06921550235cbec62aecd0f4eda419aa664cd7`. Rebuilding identical inputs reproduced all three. A feature or target change invalidates dependent baseline rows until evaluation is rerun.
+Reproducibility uses separate feature, target, and combined-build hashes. Rebuilding identical inputs must reproduce all three, while any feature or target change invalidates dependent baseline rows until evaluation is rerun. The current values are published by the generated Phase 3 evaluation rather than duplicated here.
 
-Five deterministic baselines generated 167,565 prediction rows, of which 80,060 had an evaluable historical target across the 2020-2025 folds. The age- and position-adjusted baseline had the best aggregate points-per-game MAE at 2.581 and total-points MAE at 33.324. The report separates the all-candidate attrition view from positive-game accuracy and counts 6,464 evaluation candidates: 3,102 with positive games, 3,344 with zero games, and 18 with unavailable active-game outcomes. Current ADP was not backfilled into historical folds because no cutoff-safe historical archive exists. These frozen Phase 3 fingerprints and folds remain the comparison contract for Phase 4.
+Five deterministic baselines are evaluated on chronological 2020-2025 folds. The report separates the all-candidate attrition view from positive-game accuracy, preserves missing participation-dependent outcomes as unavailable, and does not backfill current ADP into historical folds. These Phase 3 fingerprints and folds remain the comparison contract for Phase 4; current row counts and metrics live in the generated Phase 3 evaluation.
 
 ## Reproduce the Phase 4 model run
 
-Phase 4 trains one Ridge and one histogram gradient-boosting model for each QB/RB/WR/TE and points-per-game/games-active/total-points route. It uses pooled 2020-2024 validation for selection and reserves 2025 as a final test that never selects a champion.
+Phase 4 trains one Ridge and one histogram gradient-boosting model for each QB/RB/WR/TE and points-per-game/games-active/total-points route. Learned models receive raw `age_at_cutoff`; they do not also receive the deterministic `age_adjustment_factor` used by transparent baselines. This prevents the model from learning age on top of a second hand-authored age penalty.
 
 ```powershell
 fantasy-draft models train-player-models --rules configs/example_ppr_12_team.yaml --validation-start-season 2020 --test-season 2025 --output docs/PHASE_4_MODEL_EVALUATION.md
@@ -139,9 +149,7 @@ fantasy-draft status
 fantasy-draft app
 ```
 
-The validated run is `phase4-7ae8e9aed04bffca00c0`, with run fingerprint `7ae8e9aed04bffca00c04d05e623f8afd20877dcfa09ddf43a8c1a7e8c34db03`. It registered 24 models, persisted 45,588 predictions (32,024 evaluable and 6,804 live learned-candidate predictions), compared 84 selection candidates, selected 12 position/target champions, and materialized 1,367 live board rows.
-
-A learned candidate is selected only when its pooled validation MAE is below the best transparent baseline and the paired-bootstrap 95% confidence interval for learned-minus-baseline MAE has an upper bound below zero. That gate selected learned models for 9 of 12 routes: every total-points and games-active route plus histogram gradient boosting for WR points per game. QB, RB, and TE points per game retain the age/position-adjusted baseline.
+Model selection freezes one cutoff-safe draft-relevant cohort per validation season from the transparent weighted-components total-points baseline: the top 12 QBs, 24 RBs, 36 WRs, and 12 TEs. A learned candidate must improve MAE on that same cohort with a paired-bootstrap 95% confidence interval below zero. It must also remain within the configured pooled-MAE tolerance, and total-points candidates must preserve top-N capture within the configured ranking tolerance. The 2025 test is evaluated only after selection and never chooses a champion. Current run IDs, fingerprints, winner counts, and metrics live in the generated Phase 4 evaluation.
 
 Learned P10/P50/P90 ranges use signed residuals from training-only, earlier out-of-fold predictions and are evaluated by season, position, and projection tier. A retained baseline remains an honest point estimate with `P10=P50=P90`. The 233 live rookies also use point-only transparent fallbacks because Phase 3 has no historical preseason rookie-position cohort: QB 21, RB 46, WR 114, and TE 52.
 
@@ -149,7 +157,11 @@ DuckDB is authoritative for the one active deterministic run. Every training att
 
 ## Reproduce the Phase 5 ADP foundation
 
-Phase 5 verifies every archived FFC or manual ESPN capture against its manifest, collapses duplicate manifests that point to the same immutable raw payload, and loads each production snapshot idempotently. Clearly labeled synthetic captures are skipped by default.
+Phase 5 verifies every archived FFC, direct Sleeper, or authorized manual aggregate capture against
+its manifest, including the Yahoo/Sleeper/RTSports/FantasyPros snapshots produced from an accepted
+FantasyPros Overall ADP export. It collapses duplicate manifests that point to the same immutable
+raw payload and loads each production snapshot idempotently. Clearly labeled synthetic captures are
+skipped by default.
 
 ```powershell
 fantasy-draft data load-adp
@@ -159,9 +171,16 @@ fantasy-draft status
 fantasy-draft app
 ```
 
-The validated build has fingerprint `3446513dfe4b122079ba1ed89b6517821d35cac48821ff1631e25a77f6dd3b6b` and snapshot fingerprint `44624854b5c45f80fb0017e6ecdb52c972d4389236d35131b2dbfccb9a0447f2`. One production FFC snapshot produced 246 canonical observations, 246 movement-feature rows, 738 baseline rows, and 246 availability-parameter rows. All 246 identities remain unresolved and are safely keyed by source identity instead of display name. The labeled ESPN fixture is excluded from the production build.
+The deterministic August 24 rebuild contains six production snapshots, 2,795 observations, 2,795
+movement features, 8,385 forecast rows, and 2,795 availability parameters. Four snapshots come
+from the authenticated FantasyPros Overall export: Yahoo 222 rows (185 mapped), Sleeper 302 (244
+mapped), RTSports 328 (280 mapped), and FantasyPros composite 370 (299 mapped). Unresolved rows
+remain source-keyed rather than being forced onto a player. The labeled ESPN fixture remains
+excluded from the production build.
 
-Persistence is ready for all 246 observations. Linear and exponentially weighted trends require at least three dated observations per source player, so neither is active yet. Every availability scale came from source-reported standard deviation; no configured fallback was needed. These probabilities are explicitly uncalibrated because no linked real-draft outcomes are archived, and no supervised movement or availability model is claimed.
+The availability distributions remain explicitly uncalibrated because no linked real-draft
+outcomes are archived, and no supervised movement or availability model is claimed. See the
+[dated market quality report](docs/ADP_MARKET_QUALITY_REPORT_2026-08-24.md).
 
 ## Run the Phase 6 draft room
 
@@ -189,7 +208,15 @@ Use the current version printed by `draft show` for each mutation. Every command
 
 The versioned `phase6-baseline-v1` configuration uses 64 default simulation paths, evaluates six candidates, and requires 100% canonical market coverage. Controlled mapped fixtures prove seeded rest-of-draft simulation, distinct balanced/safe-floor/high-upside outputs, configurable component weights, ruleset-sensitive replacement value, and the absence of championship-probability claims. That enhanced engine remains distinct from the app's projection-first guidance.
 
-Current enhanced-simulation status is `identity_mapping_required`: 0 of 203 draftable PPR/12-team QB/RB/WR/TE ADP rows map to canonical projection IDs. The 43 archived PK/DEF rows are outside the configured roster and projection scope. Names are never used as a fallback join. The main Draft Assistant still recommends from projections and league rules; the CLI `draft recommend` command remains the stricter market-simulation action and stays unavailable until the operator reviews identities and rebuilds Phase 5:
+Current enhanced-simulation status remains `identity_mapping_required`, but the market foundation is
+now partially linked: 877 of 1,278 compatible FFC/Sleeper source observations are mapped to active
+projection players (68.6%; the versioned engine requires 100%). Cross-source rows for one player are
+resolved deterministically to the newest capture. Another 295 rows are safely outside the frozen
+recommendation pool, including 245 mapped market-only players and seven position-mismatched rows;
+they remain archived and reported. Names are never used as an unqualified fallback join. The main
+Draft Assistant still recommends from projections and league rules; the CLI `draft recommend`
+command remains the stricter market-simulation action and stays unavailable until the residual
+identity queue is reviewed and Phase 5 is rebuilt:
 
 ```powershell
 fantasy-draft data review-identities
@@ -218,8 +245,10 @@ Streamlit exposes one stable route for each workflow:
 | Route | Purpose |
 |---|---|
 | `/` | Default quick start, best pick now, alternatives, one-click pick tracking, compact roster, and round-by-team snake board |
-| `/rankings` | Searchable league-adjusted rankings with projections, uncertainty, tiers, value over replacement, pinned identity columns, quick top-N views, and an all-player view |
+| `/rankings` | Searchable consensus-first rankings with FantasyPros market rank, Experimental Model Rank, rank delta, projections, tiers, and value over replacement |
 | `/draft-report` | Descriptive lineup, positional capital, value, risk, strategy, and limitation report |
+| `/player-export` | Downloadable consensus-first comparison with Experimental Model Rank, model-versus-market delta, and one bottom-of-page FantasyPros Overall ADP CSV upload |
+| `/player-market-consensus` | Player-first creator-opinion lookup with an explicit transcript-corpus evidence gate |
 | `/help` | Plain-language quick start, live-pick instructions, and recommendation glossary |
 | `/league-settings` | Advanced roster/scoring/playoff rules, draft slot, fingerprint, and YAML backup/restore |
 | `/technical-draft-room` | Advanced frozen-board, replay, and market-simulation diagnostics |
@@ -229,15 +258,52 @@ Streamlit exposes one stable route for each workflow:
 | `/model-details` | Read-only model contract, chronological evidence, diagnostics, and player explanations |
 | `/learning-center` | Advanced guides and notebook previews for the underlying data science |
 
-The current local interface uses Streamlit's native dark theme rather than fragile page-level CSS. Inter keeps controls and tables readable, while Outfit gives headings the same clean geometric direction as the public DraftIQ redraft interface. Turn status, the primary recommendation, alternatives, and roster information are grouped into distinct bordered cards. On the user's turn, recommendation and roster context appear before the player pool; on an opponent's turn, the available-player table moves up so **Record taken** is the immediate action. The live table pins its action, rank, and player columns, while Player rankings pins rank and player. **Draft activity** defaults to a position-colored, round-by-team snake board with the user's column and current pick called out; a chronological pick log remains available as the alternate view. Projection, market, and live-news limitations remain accessible in compact badges and disclosure sections without dominating the main drafting workflow.
+The current local interface uses Streamlit's native dark theme rather than fragile page-level CSS. Inter keeps controls and tables readable, while Outfit gives headings the same clean geometric direction as the public DraftIQ redraft interface. Turn status, the primary recommendation, alternatives, and roster information are grouped into distinct bordered cards. On the user's turn, recommendation and roster context appear before the player pool; on an opponent's turn, the available-player table moves up so **Record taken** is the immediate action. Available-player and rankings tables default to FantasyPros consensus rank when it is present, keep player identity pinned, and expose Experimental Model Rank plus the market delta alongside it. Large rank disagreements are warnings to investigate, not proof that either source is correct. **Draft activity** defaults to a position-colored, round-by-team snake board with the user's column and current pick called out; a chronological pick log remains available as the alternate view. Projection, market, and live-news limitations remain accessible in compact badges and disclosure sections without dominating the main drafting workflow.
 
-The Data Center may run read-only audits, idempotent warehouse initialization, immutable nflverse/snap-count/FFC/manual ESPN archive actions, and the archive-first `league-history-v1` ZIP workflow. A history ZIP is preserved before in-memory validation and changes canonical tables only through one successful transaction. Standalone history CSV/JSON remains archive-only. Existing nflverse, participation, and ADP canonical loads remain explicit CLI handoffs (`load-nflverse`, `load-nflverse-participation`, and `load-adp`). Sleeper authentication/import remains unavailable.
+**Player Evaluation** is the active follow-up direction. Player Export List unions the validated
+2026 projection board with accepted current-season market-only players and reads latest exact-scope
+platform snapshots directly from DuckDB. The bottom of the page accepts one manually downloaded
+FantasyPros **Overall ADP** CSV with the required columns `Rank`, `Player (Bye)`, `POS`, `Yahoo`,
+`Sleeper`, `RTSports`, and `AVG`; the optional `Real-Time` column is ignored. Selecting a valid file
+automatically preserves its exact original bytes and
+loads four immutable overall snapshots: `yahoo`, `sleeper`, `rtsports`, and `fantasypros`. The `AVG`
+field is displayed as the FantasyPros composite; it is not recomputed from the other three columns.
+Identity mapping remains conservative, so ambiguous players stay unresolved instead of being
+joined by name alone. The verified board now has 1,368 players, 276 with market data, 927 platform
+observations, and 165 complete four-source comparisons. FantasyPros `AVG` produces the primary
+**Consensus Rank** when present. **Experimental Model Rank** is secondary and uses the same
+replacement-value ranking contract as Draft Assistant under the default 12-team full-PPR Standard
+roster (1 QB, 2 RB, 2 WR, 1 TE, 1 FLEX, and 7 bench spots; no K/DST). Its draft-facing projection
+is points per game multiplied by 17 healthy games; neither predicted games active nor direct
+season-total predictions can lower a player because of an injury assumption. The displayed delta
+is Consensus Rank minus Experimental Model Rank, so a positive value means the model is more
+optimistic than the market. Market-only players without a supported projection can remain blank.
+Player Market Consensus registers Fantasy Football Advice as its first 2026 source
+but intentionally displays no stance until a complete video inventory, transcript coverage report,
+alias-aware mention index, and reviewed aggregation exist. See
+[Player Evaluation Milestones](docs/PLAYER_EVALUATION_PLAN.md).
+
+The Data Center may run read-only audits, idempotent warehouse initialization, immutable
+nflverse/snap-count/FFC/Sleeper/authorized platform archive actions, and the archive-first
+`league-history-v1` ZIP workflow. A history ZIP is preserved before in-memory validation and
+changes canonical tables only through one successful transaction. Standalone history CSV/JSON
+remains archive-only. Existing nflverse, participation, and ADP canonical loads remain explicit
+CLI handoffs (`load-nflverse`, `load-nflverse-participation`, and `load-adp`). Sleeper ADP acquisition
+is archive-first through its explicit CLI command. The FantasyPros aggregate path supports a CSV
+that the user downloads after signing into FantasyPros in their own browser. Selecting the file
+starts local validation and import immediately; there is no preview or confirmation step. The app
+does not store FantasyPros credentials or cookies, automate the login, or acquire that export
+during a Streamlit rerun.
 
 Model Lab never trains or promotes a model. It reads the validated Phase 3/4 publication and shows target/feature definitions, chronological folds, learned-versus-baseline decisions, metrics, residuals, feature importance, model cards, and served player explanations. Use the CLI training command only when intentionally creating a new model publication.
 
-Draft Assistant quick start keeps the checked-in 2026 full-PPR scoring contract and offers two no-K/DST roster presets: Standard (2 WR, 1 FLEX) and WR/FLEX-heavy (3 WR, 2 FLEX), both with seven bench spots. The user chooses the preset, league size, draft position, and name. Saved **League settings** do not alter Quick Start. To use another full-PPR QB/RB/WR/TE/FLEX/SUPERFLEX/bench roster, save it in **League settings** and create the session in **Technical draft room**; scoring must still match the active projection publication. Each session freezes its exact rules, projections, and optional market lineage. Draft reports may be generated for incomplete drafts, but those values are labeled provisional; missing ADP and uncertainty remain missing rather than being imputed. The 233 rookie heuristic rows are the explicit exception: they are unvalidated point estimates with `P10=P50=P90` and risk marked unavailable.
+Draft Assistant quick start keeps the checked-in 2026 full-PPR scoring contract and offers two no-K/DST roster presets: Standard (2 WR, 1 FLEX) and WR/FLEX-heavy (3 WR, 2 FLEX), both with seven bench spots. The user chooses the preset, league size, draft position, and name. Saved **League settings** do not alter Quick Start. To use another full-PPR QB/RB/WR/TE/FLEX/SUPERFLEX/bench roster, save it in **League settings** and create the session in **Technical draft room**; scoring must still match the active projection publication. Each session freezes its exact rules, health-neutral PPG-times-17 projections, and optional market lineage. FantasyPros consensus is the primary board reference when present, while personalized recommendation components remain separately labeled. Draft reports may be generated for incomplete drafts, but those values are labeled provisional; missing ADP and uncertainty remain missing rather than being imputed. Rookie heuristic rows remain the explicit exception: they are unvalidated point estimates with `P10=P50=P90` and risk marked unavailable.
 
-The recommendation-first milestone passes Ruff, strict mypy across 97 source files, all 299 repository tests, the production audit across eight manifests and 12 immutable raw files, and a real browser walkthrough covering quick start, recommendation rendering, table-based user/opponent picks, search reset, persistence, rankings, help, and undo. The browser-created practice state was removed afterward and all local-state counters returned to zero. Hosted pull-request and resulting `main` workflows remain the publication gate; GitHub Actions is the live source of truth for that evidence.
+The production audit is green across 15 manifests and 19 verified immutable raw files after the
+deterministic Phase 5 rebuild. Local Player Export verification covers its 1,368-player universe,
+276 players with market data, 927 platform observations, 165 complete comparisons, search reset,
+and QB/RB/WR/TE-only position filter. Hosted pull-request and resulting `main` workflows remain the
+publication gate; GitHub Actions is the live source of truth for that evidence.
 
 Phase 7 validation passed Ruff, strict mypy across 87 source files, 251 pytest tests in 127.81 seconds, AppTest with zero exceptions across all seven pages, and the CLI data audit across eight manifests and 12 verified immutable files. Real browser QA navigated the multipage app and successfully triggered the live Data Center audit action. See [the Phase 7 evaluation](docs/PHASE_7_STREAMLIT_EVALUATION.md).
 

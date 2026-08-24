@@ -406,6 +406,7 @@ def _execute_training(
         test_season=contract.test_season,
         n_bootstrap=2_000,
         seed=model_config.random_seed,
+        draft_relevance_policy=model_config.draft_relevance_policy,
     )
     # Explanations are deliberately computed only after validation has fixed the
     # champions. They cannot influence selection or expose the test outcome early.
@@ -1055,8 +1056,8 @@ def _build_live_board(
                 else:
                     reason = (
                         "The transparent heuristic retained the title because the best "
-                        "learned candidate did not both lower pooled validation MAE and "
-                        "clear the paired-bootstrap uncertainty gate."
+                        "learned candidate did not clear the fixed draft-relevant cohort, "
+                        "paired-bootstrap, pooled-MAE, and ranking safeguards."
                     )
                 explanation = explain_heuristic_fallback(
                     heuristic_name=selected_name,
@@ -1320,8 +1321,8 @@ def _model_card_payload(
         "trained_at": trained_at.isoformat(),
         "purpose": (
             "Project one future NFL season for draft-preparation comparison; this candidate "
-            "is selected only if it lowers pooled future-season validation MAE and the "
-            "paired-bootstrap comparison supports that improvement."
+            "is selected only if it improves fixed cutoff-safe draft-relevant validation "
+            "rows and clears paired-bootstrap, pooled-MAE, and ranking safeguards."
         ),
         "target_name": route.target_name,
         "training_seasons": list(route.tuning.training_seasons),
@@ -1346,8 +1347,9 @@ def _model_card_payload(
             ),
             "best_learned_vs_baseline_bootstrap": champion["best_learned_vs_baseline_bootstrap"],
             "selection_rule": (
-                "A learned candidate must lower pooled validation MAE and its paired "
-                "bootstrap 95% interval for the MAE difference must remain below zero; "
+                "A learned candidate must lower fixed-cohort draft-relevant validation MAE, "
+                "its paired-bootstrap 95% interval must remain below zero, pooled MAE must "
+                "stay within tolerance, and total-points top-N capture must be preserved; "
                 "otherwise the transparent baseline is retained."
             ),
         },
@@ -1531,8 +1533,8 @@ def _report_payload(
         "quality_checks": [
             "All preprocessing and tuning are fold-local.",
             (
-                f"{list(contract.validation_seasons)} pooled validation MAE plus a paired "
-                "bootstrap confidence check select champions; "
+                f"{list(contract.validation_seasons)} cutoff-safe draft-relevant cohort MAE "
+                "plus paired-bootstrap, pooled-MAE, and ranking safeguards select champions; "
                 f"{contract.test_season} never selects."
             ),
             "Every learned candidate is compared against all five Phase 3 baselines.",

@@ -13,6 +13,10 @@ from fantasy_draft_ai.ui.pages.league_history import render as render_league_his
 from fantasy_draft_ai.ui.pages.league_setup import render as render_league_setup
 from fantasy_draft_ai.ui.pages.learning_center import render as render_learning_center
 from fantasy_draft_ai.ui.pages.model_lab import render as render_model_lab
+from fantasy_draft_ai.ui.pages.player_export import render as render_player_export
+from fantasy_draft_ai.ui.pages.player_market_consensus import (
+    render as render_player_market_consensus,
+)
 from fantasy_draft_ai.ui.pages.post_draft import render as render_post_draft
 from fantasy_draft_ai.ui.pages.rankings import render as render_rankings
 
@@ -45,6 +49,20 @@ def run_app() -> None:
                 title="Draft report",
                 icon=":material/analytics:",
                 url_path="draft-report",
+            ),
+        ],
+        "Player Evaluation": [
+            st.Page(
+                render_player_export,
+                title="Player Export List",
+                icon=":material/table_view:",
+                url_path="player-export",
+            ),
+            st.Page(
+                render_player_market_consensus,
+                title="Player Market Consensus",
+                icon=":material/forum:",
+                url_path="player-market-consensus",
             ),
         ],
         "Help": [
